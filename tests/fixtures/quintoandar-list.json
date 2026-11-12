@@ -1,0 +1,235 @@
+{
+ "engine_timed_out": false,
+ "search_id": "af9674fd-aa64-4870-84eb-57a6f70a11d6",
+ "took": 18,
+ "hits": {
+  "hits": [
+   {
+    "origin": "TRANSACTIONAL",
+    "_id": "895060022",
+    "_score": 50.83282,
+    "_source": {
+     "id": 895060022,
+     "coverImage": "original895060022-996.7670526040557f0dd2e3d-6336-4307-a024-5cedf0ea380a-LEAD3P-cdbd1a2e-18a2-4d9b-9069-9c48ab71ce31.jpeg",
+     "rent": 35000,
+     "totalCost": 37845,
+     "iptuPlusCondominium": 1360,
+     "area": 300,
+     "address": "Rua Simpatia",
+     "regionName": "Vila Madalena",
+     "city": "São Paulo",
+     "type": "Casa",
+     "forRent": false,
+     "bedrooms": 4,
+     "parkingSpaces": 6,
+     "bathrooms": 5,
+     "isFurnished": true,
+     "neighbourhood": "Jardim das Bandeiras",
+     "location": {
+      "lat": -23.5516316,
+      "lon": -46.6867599
+     }
+    },
+    "fields": {
+     "listingTags": []
+    },
+    "orderedImageList": [
+     {
+      "name": "original895060022-996.7670526040557f0dd2e3d-6336-4307-a024-5cedf0ea380a-LEAD3P-cdbd1a2e-18a2-4d9b-9069-9c48ab71ce31.jpeg"
+     }
+    ],
+    "scoreMatchTag": [
+     "SAME_CITY_MATCH"
+    ],
+    "matched_queries": [
+     "GEO_LOCATION_EXACT_MATCH_CITY_0",
+     "USER_EMBEDDING"
+    ]
+   },
+   {
+    "origin": "TRANSACTIONAL",
+    "_id": "894550005",
+    "_score": 50.818195,
+    "_source": {
+     "id": 894550005,
+     "coverImage": "894550005-869.8110213213604IMG2308.jpeg",
+     "rent": 25000,
+     "totalCost": 30211,
+     "iptuPlusCondominium": 4150,
+     "area": 929,
+     "address": "Rua dos Tamanás",
+     "regionName": "Vila Madalena",
+     "city": "São Paulo",
+     "type": "Casa",
+     "forRent": true,
+     "bedrooms": 4,
+     "parkingSpaces": 4,
+     "bathrooms": 9,
+     "isFurnished": false,
+     "neighbourhood": "Vila Madalena",
+     "location": {
+      "lat": -23.5588862,
+      "lon": -46.6953149
+     }
+    },
+    "fields": {
+     "listingTags": []
+    },
+    "orderedImageList": [
+     {
+      "name": "894550005-869.8110213213604IMG2308.jpeg"
+     }
+    ],
+    "scoreMatchTag": [
+     "SAME_CITY_MATCH"
+    ],
+    "matched_queries": [
+     "GEO_LOCATION_EXACT_MATCH_CITY_0",
+     "USER_EMBEDDING"
+    ]
+   },
+   {
+    "origin": "TRANSACTIONAL",
+    "_id": "893494062",
+    "_score": 50.812553,
+    "_source": {
+     "id": 893494062,
+     "coverImage": "893494062-201.90280058602295DSCF2260copy.jpg",
+     "rent": 4000,
+     "totalCost": 8208,
+     "iptuPlusCondominium": 4054,
+     "area": 110,
+     "address": "Rua João Moura",
+     "regionName": "Pinheiros",
+     "city": "São Paulo",
+     "type": "Apartamento",
+     "forRent": true,
+     "bedrooms": 3,
+     "parkingSpaces": 3,
+     "bathrooms": 4,
+     "isFurnished": false,
+     "neighbourhood": "Pinheiros",
+     "location": {
+      "lat": -23.5545604,
+      "lon": -46.6816472
+     }
+    },
+    "fields": {
+     "listingTags": []
+    },
+    "orderedImageList": [
+     {
+      "name": "893494062-201.90280058602295DSCF2260copy.jpg"
+     }
+    ],
+    "scoreMatchTag": [
+     "SAME_CITY_MATCH"
+    ],
+    "matched_queries": [
+     "GEO_LOCATION_EXACT_MATCH_CITY_0",
+     "USER_EMBEDDING"
+    ]
+   },
+   {
+    "origin": "TRANSACTIONAL",
+    "_id": "895682392",
+    "_score": 50.811474,
+    "_source": {
+     "id": 895682392,
+     "coverImage": "original895682392-338.2592829873647LRM20260831100422.jpg",
+     "rent": 13560,
+     "totalCost": 16367,
+     "iptuPlusCondominium": 2231,
+     "area": 456,
+     "address": "Rua Simpatia",
+     "regionName": "Vila Madalena",
+     "city": "São Paulo",
+     "type": "Casa",
+     "forRent": true,
+     "bedrooms": 5,
+     "parkingSpaces": 8,
+     "bathrooms": 8,
+     "isFurnished": false,
+     "neighbourhood": "Jardim das Bandeiras",
+     "location": {
+      "lat": -23.5532886,
+      "lon": -46.6865781
+     }
+    },
+    "fields": {
+     "listingTags": []
+    },
+    "orderedImageList": [
+     {
+      "name": "original895682392-338.2592829873647LRM20260831100422.jpg"
+     }
+    ],
+    "scoreMatchTag": [
+     "SAME_CITY_MATCH"
+    ],
+    "matched_queries": [
+     "GEO_LOCATION_EXACT_MATCH_CITY_0",
+     "USER_EMBEDDING"
+    ]
+   }
+  ],
+  "max_score": 50.83282,
+  "total": {
+   "relation": "Eq",
+   "value": 1959,
+   "transactional_value": 1229,
+   "classified_value": 754,
+   "current_page_classified_count": 0
+  }
+ },
+ "location": {
+  "id": "ChIJ0WGkg4FEzpQRrlsz_whLqZs",
+  "source": "MOBILE_API",
+  "locationContext": "CITY",
+  "viewport": {
+   "north": -23.3847457,
+   "south": -23.7919398,
+   "east": -46.3745483,
+   "west": -46.8129856
+  },
+  "city": "São Paulo",
+  "state": "SP",
+  "country": "Brasil",
+  "center": {
+   "lat": -23.55052,
+   "lng": -46.633309
+  },
+  "address": "São Paulo, SP, Brasil",
+  "regionAvailable": true
+ },
+ "locationInfo": {
+  "locations": [
+   {
+    "id": "ChIJ0WGkg4FEzpQRrlsz_whLqZs",
+    "source": "MOBILE_API",
+    "locationContext": "CITY",
+    "viewport": {
+     "north": -23.3847457,
+     "south": -23.7919398,
+     "east": -46.3745483,
+     "west": -46.8129856
+    },
+    "city": "São Paulo",
+    "state": "SP",
+    "country": "Brasil",
+    "center": {
+     "lat": -23.55052,
+     "lng": -46.633309
+    },
+    "address": "São Paulo, SP, Brasil",
+    "regionAvailable": true
+   }
+  ],
+  "joinedViewport": {
+   "north": -23.3847457,
+   "south": -23.7919398,
+   "east": -46.3745483,
+   "west": -46.8129856
+  }
+ }
+}
