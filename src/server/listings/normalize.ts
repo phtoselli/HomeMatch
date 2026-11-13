@@ -36,3 +36,28 @@ export function slugify(s: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
 }
+
+/** Comodidades que dá para tirar do texto do anúncio (ids estáveis, usados nos filtros do mapa). */
+export const AMENITY_PATTERNS: [string, RegExp][] = [
+  [
+    "armario_cozinha",
+    /\b(cozinha (americana )?(planejada|com (armarios?|gabinetes?)|mobiliada)|armarios? (planejados? )?(na|da|de|em) cozinha|gabinetes? (na|da|de) cozinha)\b/,
+  ],
+  [
+    "armario_quarto",
+    /\b(guarda[- ]?roupas?|armarios? embutidos?|closets?|armarios? (planejados? )?(nos?|nas?|dos?|das?|em) (dois |tres )?(quartos?|dormitorios?|suites?)|(quartos?|dormitorios?|suites?) (planejad[oa]s?|com armarios?))\b/,
+  ],
+  ["pia", /\b(pias?|bancadas?|cubas?)\b/],
+  ["mobiliado", /\b(semi[- ]?)?mobiliad[oa]s?\b/],
+];
+
+/** Texto do anúncio (título, descrição, lista de itens) → ids de comodidades, sem duplicar. */
+export function detectAmenities(text: string | undefined | null): string[] {
+  if (!text) return [];
+  const s = text
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+  return AMENITY_PATTERNS.filter(([, re]) => re.test(s)).map(([id]) => id);
+}

@@ -70,6 +70,8 @@ export function parseQuintoAndar(json: QaResponse): Listing[] {
       bathrooms: s.bathrooms,
       parking: s.parkingSpaces,
       furnished: s.isFurnished,
+      // A lista não traz descrição: só dá para saber se é mobiliado. Sem isso, "sem informação".
+      amenities: s.isFurnished ? ["mobiliado"] : undefined,
       address: [s.address, s.neighbourhood ?? s.regionName].filter(Boolean).join(", "),
       neighbourhood: s.neighbourhood ?? s.regionName,
       lat: s.location.lat,

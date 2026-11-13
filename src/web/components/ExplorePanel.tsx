@@ -40,17 +40,59 @@ export interface Filters {
   basis: "total" | "rent";
   minBedrooms: number;
   sort: "price" | "commute" | "area";
+  /** Comodidades exigidas (ids de Listing.amenities). Opcional: filtros salvos antes não têm. */
+  amenities?: string[];
+  /** Esconde anúncios sem informação de comodidades quando há alguma exigida. */
+  hideUnknown?: boolean;
 }
 
-export const DEFAULT_FILTERS: Filters = { types: [], priceMin: null, priceMax: null, basis: "total", minBedrooms: 0, sort: "price" };
+export const DEFAULT_FILTERS: Filters = {
+  types: [], priceMin: null, priceMax: null, basis: "total", minBedrooms: 0, sort: "price", amenities: [], hideUnknown: false,
+};
+
+export const AMENITY_FILTERS: { id: string; label: string; tag: string }[] = [
+  { id: "armario_cozinha", label: "Armário na cozinha", tag: "🍳 armário cozinha" },
+  { id: "armario_quarto", label: "Guarda-roupa no quarto", tag: "🚪 guarda-roupa" },
+  { id: "pia", label: "Pia/bancada", tag: "🚰 pia/bancada" },
+];
+const AMENITY_TAG: Record<string, string> = {
+  ...Object.fromEntries(AMENITY_FILTERS.map((a) => [a.id, a.tag])),
+  mobiliado: "🛋️ mobiliado",
+};
+
+/** true/false quando o anúncio diz algo; undefined quando não há informação. Mobiliado conta como tendo armários. */
+export function hasAmenity(l: Listing, id: string): boolean | undefined {
+  if (!l.amenities) return undefined;
+  if (l.amenities.includes(id)) return true;
+  if (id.startsWith("armario_") && l.amenities.includes("mobiliado")) return true;
+  // Só "mobiliado" (lista do QuintoAndar, sem descrição): não dá para dizer que falta pia.
+  if (l.amenities.length === 1 && l.amenities[0] === "mobiliado") return undefined;
+  return false;
+}
+
+/** 0 = tem tudo que foi pedido, 1 = sem informação, 2 = falta algo. */
+export function amenityRank(l: Listing, wanted: string[]): number {
+  let rank = 0;
+  for (const id of wanted) {
+    const h = hasAmenity(l, id);
+    if (h === false) return 2;
+    if (h === undefined) rank = 1;
+  }
+  return rank;
+}
 
 export function applyFilters(list: Listing[], f: Filters): Listing[] {
+  const wanted = f.amenities ?? [];
   return list.filter((l) => {
     const price = f.basis === "total" ? l.total : l.rent;
     if (f.types.length && !f.types.includes(l.type)) return false;
     if (f.priceMin != null && price < f.priceMin) return false;
     if (f.priceMax != null && price > f.priceMax) return false;
     if (f.minBedrooms && (l.bedrooms ?? 0) < f.minBedrooms) return false;
+    if (wanted.length) {
+      const r = amenityRank(l, wanted);
+      if (r === 2 || (r === 1 && f.hideUnknown)) return false;
+    }
     return true;
   });
 }
@@ -130,8 +172,11 @@ export function ExplorePanel(p: Props) {
     const withCommute = p.filtered.map((l) => ({ l, c: lookup?.(l) }));
     const key = (x: (typeof withCommute)[number]) =>
       p.filters.sort === "commute" ? x.c?.commuteMin ?? 999 : p.filters.sort === "area" ? -(x.l.area ?? 0) : p.filters.basis === "total" ? x.l.total : x.l.rent;
-    return withCommute.sort((a, b) => key(a) - key(b));
-  }, [p.filtered, lookup, p.filters.sort, p.filters.basis]);
+    // Com comodidades exigidas, quem confirma tudo vem antes de quem não informa.
+    const wanted = p.filters.amenities ?? [];
+    const rank = (x: (typeof withCommute)[number]) => (wanted.length ? amenityRank(x.l, wanted) : 0);
+    return withCommute.sort((a, b) => rank(a) - rank(b) || key(a) - key(b));
+  }, [p.filtered, lookup, p.filters.sort, p.filters.basis, p.filters.amenities]);
 
   const f = p.filters;
   const setF = (patch: Partial<Filters>) => p.setFilters({ ...f, ...patch });
@@ -306,6 +351,27 @@ export function ExplorePanel(p: Props) {
                     <option value="area">Maior área</option>
                   </select>
                 </div>
+                <div className="row">
+                  {AMENITY_FILTERS.map((a) => {
+                    const on = (f.amenities ?? []).includes(a.id);
+                    return (
+                      <label key={a.id} className="chip-check">
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={() => setF({ amenities: on ? (f.amenities ?? []).filter((x) => x !== a.id) : [...(f.amenities ?? []), a.id] })}
+                        />
+                        {a.label}
+                      </label>
+                    );
+                  })}
+                </div>
+                {(f.amenities ?? []).length > 0 && (
+                  <label className="inline" title="Muitos anúncios não descrevem os armários; por padrão eles aparecem no fim da lista.">
+                    <input type="checkbox" checked={!!f.hideUnknown} onChange={() => setF({ hideUnknown: !f.hideUnknown })} />
+                    esconder anúncios sem informação
+                  </label>
+                )}
               </div>
               <p className="hint">{p.filtered.length} de {p.listings.length} anúncios</p>
               <ul className="listings">
@@ -316,6 +382,9 @@ export function ExplorePanel(p: Props) {
                       <div className="lprice">{money(f.basis === "total" ? l.total : l.rent)}</div>
                       <div className="ltitle">{l.typeLabel}{l.area ? ` · ${l.area} m²` : ""}{l.bedrooms ? ` · ${l.bedrooms} qto` : ""}</div>
                       <div className="lmeta">{l.region} · {SOURCE_LABEL[l.source]}{c ? ` · 🚌 ~${c.commuteMin} min` : ""}</div>
+                      {l.amenities && l.amenities.length > 0 && (
+                        <div className="lmeta">{l.amenities.map((a) => AMENITY_TAG[a] ?? a).join(" · ")}</div>
+                      )}
                     </div>
                     <a href={l.url} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} title="Abrir anúncio">↗</a>
                   </li>
