@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AnalysisResult, BBox, BusLine, City, FeatureDef, LatLng, LinkResult, Listing } from "../shared/types";
+import type { AnalysisResult, BBox, BusLine, City, FeatureDef, LatLng, LinkResult, Listing, TransitOperatorInfo } from "../shared/types";
 import { api } from "./api";
 import { ExplorePanel, DEFAULT_FILTERS, applyFilters, type Filters } from "./components/ExplorePanel";
 import { LinksPanel } from "./components/LinksPanel";
@@ -27,6 +27,7 @@ export function App() {
   const [focus, setFocus] = useState<string | null>(null);
   const [viewBBox, setViewBBox] = useState<BBox | null>(null);
   const [loadingCity, setLoadingCity] = useState(false);
+  const [operator, setOperator] = useState<TransitOperatorInfo | null>(null);
 
   const fitTo = (bbox: BBox) => setFit({ bbox, key: Date.now() });
   const focusListing = (id: string) => {
@@ -37,11 +38,18 @@ export function App() {
   useEffect(() => {
     api.features().then(setFeatures).catch(() => setFeatures([]));
     if (city) fitTo(city.bbox);
-    // Linhas salvas: guarda só o id OSM e busca de novo (o servidor tem cache).
+    // Linhas salvas: guarda só o id (OSM ou "emdec:353:1") e busca de novo (o servidor tem cache).
     for (const id of busQueries) {
-      api.bus(`https://www.openstreetmap.org/relation/${id}`).then((ls) => setBusLines((prev) => [...prev.filter((x) => x.id !== id), ...ls])).catch(() => {});
+      const q = id.includes(":") ? id : `https://www.openstreetmap.org/relation/${id}`;
+      api.bus(q, undefined, city).then((ls) => setBusLines((prev) => [...prev.filter((x) => x.id !== id), ...ls])).catch(() => {});
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Quem publica as linhas de ônibus da cidade escolhida (ex.: Campinas → EMDEC).
+  useEffect(() => {
+    setOperator(null);
+    if (city) api.operator(city).then(setOperator).catch(() => setOperator(null));
+  }, [city?.osmId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => setBusQueries(busLines.map((l) => l.id)), [busLines]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -89,6 +97,18 @@ export function App() {
             onSelect={(pl) => chooseCity(pl.osmId)}
           />
           {loadingCity && <p className="hint"><span className="spinner small" /> Carregando limites da cidade…</p>}
+          {city && !loadingCity && (
+            <p className="hint">
+              🚌 Linhas de ônibus:{" "}
+              {operator ? (
+                <>
+                  <b>{operator.name}</b> (<a href={operator.site} target="_blank" rel="noopener">site oficial</a>) — {operator.provides}.
+                </>
+              ) : (
+                "sem operador cadastrado; uso as linhas do OpenStreetMap."
+              )}
+            </p>
+          )}
         </section>
 
         <section className="step">
@@ -143,6 +163,7 @@ export function App() {
             setResults={setLinkResults}
             lines={busLines}
             setLines={setBusLines}
+            operator={operator}
             onFit={fitTo}
             onFocusListing={focusListing}
           />

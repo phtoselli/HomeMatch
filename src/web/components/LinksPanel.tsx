@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { BBox, BusLine, City, LatLng, LinkResult } from "../../shared/types";
+import type { BBox, BusLine, City, LatLng, LinkResult, TransitOperatorInfo } from "../../shared/types";
 import { api } from "../api";
 import { meters, money, nearestStop, walkMin } from "../format";
 import { SOURCE_LABEL } from "../MapView";
@@ -14,6 +14,7 @@ interface Props {
   setLines: (l: BusLine[] | ((p: BusLine[]) => BusLine[])) => void;
   onFit: (b: BBox) => void;
   onFocusListing: (id: string) => void;
+  operator: TransitOperatorInfo | null;
 }
 
 function bboxOfPoints(pts: LatLng[]): BBox {
@@ -64,10 +65,10 @@ export function LinksPanel(p: Props) {
     if (!q) return;
     setBusy("bus");
     setError(null);
-    setMsg("Procurando a linha no OpenStreetMap… (a primeira busca pode levar ~1 min)");
+    setMsg(p.operator ? `Procurando a linha no site da ${p.operator.name}…` : "Procurando a linha no OpenStreetMap… (a primeira busca pode levar ~1 min)");
     try {
       const box = p.city?.bbox ?? p.viewBBox ?? undefined;
-      const found = await api.bus(q, box);
+      const found = await api.bus(q, box, p.city);
       if (!found.length) {
         setError(`Não achei a linha "${q}" ${p.city ? `em ${p.city.name}` : "nesta área do mapa"}. Tente o número com a variante (ex.: 875A-10) ou o link da linha no OpenStreetMap.`);
         setMsg(null);
@@ -80,6 +81,30 @@ export function LinksPanel(p: Props) {
       p.onFit(bboxOfPoints(pts));
       setMsg(`${found.length} sentido(s)/variante(s) encontrados para "${q}".`);
       setBusQ("");
+    } catch (e) {
+      setError((e as Error).message);
+      setMsg(null);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function nearWork() {
+    if (!p.city || !p.work) return;
+    setBusy("bus");
+    setError(null);
+    setMsg(`Procurando no site da ${p.operator?.name ?? "operadora"} as linhas com parada perto do trabalho… (a 1ª vez baixa a rede toda, ~15 MB)`);
+    try {
+      const found = await api.busNear(p.work, p.city);
+      if (!found.length) {
+        setError("Nenhuma linha com parada a até 700 m do trabalho.");
+        setMsg(null);
+        return;
+      }
+      p.setLines((prev) => [...prev.filter((l) => !found.some((f) => f.id === l.id)), ...found]);
+      const refs = [...new Set(found.map((l) => l.ref))];
+      setMsg(`${refs.length} linha(s) passam perto do trabalho: ${refs.join(", ")}. Clique numa linha para ver só o trajeto dela.`);
+      p.onFit(bboxOfPoints(found.flatMap((l) => l.segments.flat().map(([lat, lng]) => ({ lat, lng })))));
     } catch (e) {
       setError((e as Error).message);
       setMsg(null);
@@ -184,6 +209,16 @@ export function LinksPanel(p: Props) {
           </button>
         </div>
         {!p.city && <p className="hint">Sem cidade escolhida, a busca usa a área visível do mapa.</p>}
+        {p.operator && (
+          <>
+            <p className="hint">
+              Em {p.city?.name}, as linhas vêm do site oficial da <b>{p.operator.name}</b>: trajeto e todos os pontos de parada.
+            </p>
+            <button className="ghost" disabled={busy !== null || !p.work} onClick={nearWork}>
+              🔎 Linhas que passam perto do trabalho{!p.work ? " (marque o trabalho)" : ""}
+            </button>
+          </>
+        )}
         {p.lines.length > 0 && (
           <ul className="buslines">
             {p.lines.map((l) => (
@@ -193,9 +228,12 @@ export function LinksPanel(p: Props) {
                   className="link"
                   onClick={() => p.onFit(bboxOfPoints(l.segments.flat().map(([lat, lng]) => ({ lat, lng }))))}
                 >
-                  <b>{l.ref ?? ""}</b> {l.name}
+                  <b>{l.ref ?? ""}</b> {l.name}{l.direction ? <small> · sentido {l.direction}</small> : null}
                   <span className="lmeta">
                     {l.from && l.to ? `${l.from} → ${l.to} · ` : ""}{l.stops.length} paradas{l.operator ? ` · ${l.operator}` : ""}
+                    {l.website && l.source && l.source !== "osm" && (
+                      <> · <a href={l.website} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()}>mapa oficial ↗</a></>
+                    )}
                     {p.work && (() => {
                       const ns = nearestStop(l, p.work);
                       return ns ? ` · 💼 parada a ${meters(ns.dist)} do trabalho` : " · 💼 não passa perto do trabalho";
