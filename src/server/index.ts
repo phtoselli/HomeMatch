@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { AnalyzeRequest, LinkResult, LinksRequest, ListingsRequest, StreamEvent } from "../shared/types.js";
 import { analyze } from "./analysis.js";
 import { findBusLines } from "./busline.js";
+import { operatorById, operatorFor } from "./operators/index.js";
 import { resolveLink } from "./links.js";
 import { FEATURES } from "./features.js";
 import { SOURCES, searchListings } from "./listings/index.js";
@@ -134,6 +135,20 @@ app.post("/api/links", async (req, reply) => {
   });
 });
 
+const cityQuery = {
+  cityId: z.string().optional(),
+  cityName: z.string().optional(),
+  uf: z.string().optional(),
+};
+const cityOf = (q: { cityId?: string; cityName?: string; uf?: string }) =>
+  q.cityName ? { osmId: q.cityId ?? "", name: q.cityName, stateCode: q.uf } : null;
+
+/** Quem publica as linhas de ônibus da cidade (null = só OpenStreetMap). */
+app.get("/api/transit/operator", async (req) => {
+  const q = z.object(cityQuery).parse(req.query);
+  return operatorFor(cityOf(q))?.info ?? null;
+});
+
 app.get("/api/bus", async (req) => {
   const q = z
     .object({
@@ -142,12 +157,39 @@ app.get("/api/bus", async (req) => {
       west: z.coerce.number().optional(),
       north: z.coerce.number().optional(),
       east: z.coerce.number().optional(),
+      ...cityQuery,
     })
     .parse(req.query);
   const box = q.south != null && q.west != null && q.north != null && q.east != null
     ? { south: q.south, west: q.west, north: q.north, east: q.east }
     : undefined;
+  // Id salvo de uma linha do operador ("emdec:353:1").
+  const byId = q.q.match(/^([a-z]+):(.+)$/);
+  const saved = byId && operatorById(byId[1]!);
+  if (saved) return saved.lineById(q.q);
+  // Site oficial da cidade primeiro; sem resultado, OpenStreetMap.
+  const op = /^https?:/i.test(q.q) ? undefined : operatorFor(cityOf(q));
+  if (op) {
+    const lines = await op.findLines(q.q);
+    if (lines.length) return lines;
+  }
   return findBusLines(q.q, box);
+});
+
+/** Linhas que passam perto de um ponto (o trabalho). */
+app.get("/api/bus/near", async (req) => {
+  const q = z
+    .object({
+      lat: z.coerce.number(),
+      lng: z.coerce.number(),
+      radius: z.coerce.number().min(100).max(2000).default(700),
+      max: z.coerce.number().min(1).max(20).default(8),
+      ...cityQuery,
+    })
+    .parse(req.query);
+  const op = operatorFor(cityOf(q));
+  if (!op) return [];
+  return op.linesNear({ lat: q.lat, lng: q.lng }, q.radius, q.max);
 });
 
 app.setErrorHandler((err, _req, reply) => {

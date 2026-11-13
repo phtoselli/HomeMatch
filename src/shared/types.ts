@@ -190,9 +190,9 @@ export interface LinkResult {
   error?: string;
 }
 
-/** Uma linha de ônibus/metrô com o traçado exato (vias do OSM) e as paradas. */
+/** Uma linha de ônibus/metrô (um sentido) com o traçado exato e as paradas. */
 export interface BusLine {
-  id: string; // relação OSM
+  id: string; // relação OSM ("123456") ou "<operador>:<linha>:<sentido>" (ex.: "emdec:353:1")
   ref?: string;
   name: string;
   from?: string;
@@ -203,6 +203,21 @@ export interface BusLine {
   website?: string;
   segments: [number, number][][]; // [lat, lng]
   stops: { lat: number; lng: number; name?: string }[];
+  /** De onde veio: "osm" ou o id do operador (ex.: "emdec"). */
+  source?: string;
+  /** Sentido da linha no site do operador (1 ou 2). */
+  direction?: number;
+  /** Distância da parada mais próxima do trabalho (busca "linhas perto do trabalho"). */
+  nearWorkM?: number;
+}
+
+/** Empresa/órgão que publica as linhas de ônibus de uma cidade. */
+export interface TransitOperatorInfo {
+  id: string;
+  name: string;
+  site: string;
+  /** O que o HomeMatch lê de lá. */
+  provides: string;
 }
 
 // ---------- Streaming (NDJSON) ----------

@@ -52,6 +52,8 @@ export function buildBusQuery(q: BusQuery, bbox?: BBox): string {
   } else {
     sel = q.refs.map((r) => `${base}["ref"~"^${escRe(r)}(-[0-9]+)?$",i]${bb};`).join("");
     if (q.text.length >= 4) sel += `${base}["name"~"${escRe(q.text)}",i]${bb};`;
+    // Linhas sem a tag ref, só com o número no nome ("Linha 353 ESTAÇÃO …")
+    else if (/^[0-9]{2,4}[A-Z]?$/i.test(q.text)) sel += `${base}["name"~"(^|[^0-9])${escRe(q.text)}([^0-9]|$)",i]${bb};`;
   }
   return `[out:json][timeout:120];(${sel})->.r;.r out geom;node(r.r)->.n;.n out body qt;`;
 }

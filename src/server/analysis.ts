@@ -18,7 +18,9 @@ import {
   fetchRoutesNearWork,
   genericBusCommute,
   type BoardingStop,
+  type ParsedRoute,
 } from "./transit.js";
+import { operatorFor } from "./operators/index.js";
 
 /** Abaixo disso, consideramos que as linhas da cidade não estão bem mapeadas no OSM. */
 const FEW_ROUTES = 8;
@@ -172,23 +174,40 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
   };
   const bbox = analysisBBox(req.city.bbox, req.work, req.maxCommuteMin);
 
-  emit({ type: "progress", message: "Buscando linhas de ônibus, metrô e trem que passam perto do trabalho…" });
-  const routes = await fetchRoutesNearWork(req.work, DEFAULT_TRANSIT);
+  const op = operatorFor(req.city);
+  let routes: ParsedRoute[] = [];
+  if (op) {
+    emit({ type: "progress", message: `Baixando as linhas oficiais de ${op.info.name} (trajetos e pontos)…` });
+    routes = await op.routes().catch((e) => {
+      warn(`Não deu para ler as linhas de ${op.info.name}: ${(e as Error).message}. Usando o OpenStreetMap.`);
+      return [];
+    });
+  }
+  // Com a rede oficial em mãos, não espera o Overpass (lento e muitas vezes lotado).
+  if (!routes.length) {
+    emit({ type: "progress", message: "Buscando linhas de ônibus, metrô e trem que passam perto do trabalho…" });
+    routes = await fetchRoutesNearWork(req.work, DEFAULT_TRANSIT);
+  }
   const stops = boardingStops(routes, req.work, DEFAULT_TRANSIT);
-  emit({ type: "progress", message: `${routes.length} linhas encontradas (${stops.length} pontos de embarque).` });
+  const usedIds = new Set(stops.map((s) => s.routeId));
+  const nearCount = new Set(routes.filter((r) => usedIds.has(r.id)).map((r) => r.ref ?? r.id)).size;
+  emit({
+    type: "progress",
+    message: `${nearCount} linhas passam perto do trabalho${op ? ` (fonte: ${op.info.name})` : ""} — ${stops.length} pontos de embarque.`,
+  });
   let fallback: GridInput["fallback"];
-  if (routes.length < FEW_ROUTES) {
+  if (nearCount < FEW_ROUTES && !(op && nearCount > 0)) {
     emit({ type: "progress", message: "Poucas linhas mapeadas no OpenStreetMap aqui; buscando os pontos de ônibus da cidade…" });
     const busStops = await fetchBusStops(bbox).catch(() => []);
     const workStop = new PointIndex(busStops, 500, req.work.lat).nearest(req.work, DEFAULT_TRANSIT.busWalkAtWorkM);
     if (workStop) {
       fallback = { busStops, workStopDistM: workStop.dist };
       warn(
-        `Só ${routes.length} linha(s) com itinerário no OpenStreetMap perto do trabalho. Para o resto, o tempo é ` +
+        `Só ${nearCount} linha(s) com itinerário no OpenStreetMap perto do trabalho. Para o resto, o tempo é ` +
           `"ônibus (estimado)": ponto perto de casa + ponto perto do trabalho, em linha quase reta a 15 km/h. ` +
           `Confira a linha real no modo "Meus links".`,
       );
-    } else if (!routes.length) {
+    } else if (!nearCount) {
       warn("Nenhuma linha nem ponto de ônibus no OpenStreetMap perto do trabalho; só a caminhada foi considerada.");
     }
   }
@@ -239,7 +258,7 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
   return {
     work: req.work,
     cellSizeM: req.cellSizeM,
-    routes: routes.map(({ ptv2: _p, ...r }) => r),
+    routes: routes.filter((r) => usedIds.has(r.id)).map(({ ptv2: _p, ...r }) => r),
     pois: trimmed,
     cells: grid.cells,
     regions,
