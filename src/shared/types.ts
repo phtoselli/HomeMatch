@@ -167,6 +167,8 @@ export interface Listing {
   approxLocation: boolean;
   image?: string;
   region?: string;
+  /** Comodidades detectadas no texto do anúncio: "armario_cozinha", "armario_quarto", "pia", "mobiliado". */
+  amenities?: string[];
 }
 
 export interface ListingsRequest {
