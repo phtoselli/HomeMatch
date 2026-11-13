@@ -188,12 +188,20 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
     emit({ type: "progress", message: "Buscando linhas de ônibus, metrô e trem que passam perto do trabalho…" });
     routes = await fetchRoutesNearWork(req.work, DEFAULT_TRANSIT);
   }
-  const stops = boardingStops(routes, req.work, DEFAULT_TRANSIT);
+  // Com a rede inteira do operador dá para considerar uma baldeação; com o OSM só há as linhas perto do trabalho.
+  const transfers = !!op && routes.length > 0;
+  const direct = boardingStops(routes, req.work, DEFAULT_TRANSIT);
+  const stops = transfers ? boardingStops(routes, req.work, DEFAULT_TRANSIT, { transfers: true }) : direct;
   const usedIds = new Set(stops.map((s) => s.routeId));
-  const nearCount = new Set(routes.filter((r) => usedIds.has(r.id)).map((r) => r.ref ?? r.id)).size;
+  const directIds = new Set(direct.map((s) => s.routeId));
+  const nearCount = new Set(routes.filter((r) => directIds.has(r.id)).map((r) => r.ref ?? r.id)).size;
+  const viaCount = new Set(routes.filter((r) => usedIds.has(r.id)).map((r) => r.ref ?? r.id)).size;
   emit({
     type: "progress",
-    message: `${nearCount} linhas passam perto do trabalho${op ? ` (fonte: ${op.info.name})` : ""} — ${stops.length} pontos de embarque.`,
+    message:
+      `${nearCount} linhas passam perto do trabalho${op ? ` (fonte: ${op.info.name})` : ""}` +
+      (transfers ? `; com uma baldeação, ${viaCount} linhas levam até lá` : "") +
+      ` — ${stops.length} pontos de embarque.`,
   });
   let fallback: GridInput["fallback"];
   if (nearCount < FEW_ROUTES && !(op && nearCount > 0)) {
@@ -242,6 +250,7 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
     fallback,
   });
   const regions = rankRegions(grid.cells, req.cellSizeM);
+  const cellRouteIds = new Set(grid.cells.map((c) => c.routeId).filter((id): id is string => !!id));
   if (!grid.cells.length) {
     warn("Nenhuma região atende a tudo. Tente aumentar o tempo máximo ou os raios das características.");
   }
@@ -258,7 +267,10 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
   return {
     work: req.work,
     cellSizeM: req.cellSizeM,
-    routes: routes.filter((r) => usedIds.has(r.id)).map(({ ptv2: _p, ...r }) => r),
+    // Só as linhas que chegam ao trabalho e as que as regiões encontradas usam (a rede inteira pesa MBs).
+    routes: routes
+      .filter((r) => directIds.has(r.id) || cellRouteIds.has(r.id))
+      .map(({ ptv2: _p, alightOnly: _a, ...r }) => r),
     pois: trimmed,
     cells: grid.cells,
     regions,

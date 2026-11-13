@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
-import type { AnalysisResult, BBox, City, FeatureDef, LatLng, Listing, PropertyType, SourceId } from "../../shared/types";
+import { amenityRank, type MapFilters } from "../../shared/filters";
+import type { AnalysisResult, BBox, City, FeatureDef, LatLng, Listing, ListingFilters, PropertyType, Region, SourceId } from "../../shared/types";
 import { PROPERTY_TYPE_LABEL } from "../../shared/types";
 import { api } from "../api";
 import { makeCellLookup, meters, money } from "../format";
 import type { Layers } from "../MapView";
 import { SOURCE_LABEL } from "../MapView";
 import { usePersistent } from "../usePersistent";
+import { Photo } from "./Photo";
 
 export interface Params {
   maxCommuteMin: number;
@@ -31,71 +33,39 @@ interface Props {
   setLayers: (l: Layers) => void;
   onFit: (b: BBox) => void;
   onFocusListing: (id: string) => void;
+  onOpenListing: (l: Listing) => void;
 }
 
-export interface Filters {
-  types: PropertyType[];
-  priceMin: number | null;
-  priceMax: number | null;
-  basis: "total" | "rent";
-  minBedrooms: number;
+/** O que a pessoa procura (vai para a busca nos sites) + ordem e comodidades (só no mapa). */
+export interface Filters extends MapFilters {
   sort: "price" | "commute" | "area";
-  /** Comodidades exigidas (ids de Listing.amenities). Opcional: filtros salvos antes não têm. */
-  amenities?: string[];
-  /** Esconde anúncios sem informação de comodidades quando há alguma exigida. */
-  hideUnknown?: boolean;
 }
 
 export const DEFAULT_FILTERS: Filters = {
-  types: [], priceMin: null, priceMax: null, basis: "total", minBedrooms: 0, sort: "price", amenities: [], hideUnknown: false,
+  types: [], priceMin: null, priceMax: null, basis: "total", minBedrooms: 0, minBathrooms: 0, minParking: 0, minArea: 0,
+  sort: "price", amenities: [], hideUnknown: false,
 };
+
+/** Só a parte que os sites entendem (o resto é aplicado no navegador). */
+const searchFilters = (f: Filters): ListingFilters => ({
+  types: f.types, priceMin: f.priceMin, priceMax: f.priceMax, basis: f.basis,
+  minBedrooms: f.minBedrooms, minBathrooms: f.minBathrooms ?? 0, minParking: f.minParking ?? 0, minArea: f.minArea ?? 0,
+});
 
 export const AMENITY_FILTERS: { id: string; label: string; tag: string }[] = [
   { id: "armario_cozinha", label: "Armário na cozinha", tag: "🍳 armário cozinha" },
   { id: "armario_quarto", label: "Guarda-roupa no quarto", tag: "🚪 guarda-roupa" },
   { id: "pia", label: "Pia/bancada", tag: "🚰 pia/bancada" },
 ];
-const AMENITY_TAG: Record<string, string> = {
+export const AMENITY_TAG: Record<string, string> = {
   ...Object.fromEntries(AMENITY_FILTERS.map((a) => [a.id, a.tag])),
   mobiliado: "🛋️ mobiliado",
 };
 
-/** true/false quando o anúncio diz algo; undefined quando não há informação. Mobiliado conta como tendo armários. */
-export function hasAmenity(l: Listing, id: string): boolean | undefined {
-  if (!l.amenities) return undefined;
-  if (l.amenities.includes(id)) return true;
-  if (id.startsWith("armario_") && l.amenities.includes("mobiliado")) return true;
-  // Só "mobiliado" (lista do QuintoAndar, sem descrição): não dá para dizer que falta pia.
-  if (l.amenities.length === 1 && l.amenities[0] === "mobiliado") return undefined;
-  return false;
-}
+export { amenityRank, applyFilters, hasAmenity } from "../../shared/filters";
 
-/** 0 = tem tudo que foi pedido, 1 = sem informação, 2 = falta algo. */
-export function amenityRank(l: Listing, wanted: string[]): number {
-  let rank = 0;
-  for (const id of wanted) {
-    const h = hasAmenity(l, id);
-    if (h === false) return 2;
-    if (h === undefined) rank = 1;
-  }
-  return rank;
-}
-
-export function applyFilters(list: Listing[], f: Filters): Listing[] {
-  const wanted = f.amenities ?? [];
-  return list.filter((l) => {
-    const price = f.basis === "total" ? l.total : l.rent;
-    if (f.types.length && !f.types.includes(l.type)) return false;
-    if (f.priceMin != null && price < f.priceMin) return false;
-    if (f.priceMax != null && price > f.priceMax) return false;
-    if (f.minBedrooms && (l.bedrooms ?? 0) < f.minBedrooms) return false;
-    if (wanted.length) {
-      const r = amenityRank(l, wanted);
-      if (r === 2 || (r === 1 && f.hideUnknown)) return false;
-    }
-    return true;
-  });
-}
+const SEARCH_TYPES: PropertyType[] = ["apartamento", "casa", "casa_condominio", "studio"];
+const TOP_REGIONS = 5;
 
 export function ExplorePanel(p: Props) {
   const [chosen, setChosen] = usePersistent<Record<string, number>>("features", { atacarejo: 2000, parque: 1500 });
@@ -105,60 +75,33 @@ export function ExplorePanel(p: Props) {
     cellSizeM: 500,
     commuteWeight: 0.7,
   });
-  const [sources, setSources] = usePersistent<SourceId[]>("sources", ["quintoandar", "vivareal"]);
-  const [maxPerRegion, setMaxPerRegion] = usePersistent("maxPerRegion", 60);
+  const [sources, setSources] = usePersistent<SourceId[]>("sources", ["quintoandar"]);
+  const [maxPerRegion, setMaxPerRegion] = usePersistent("maxPerRegion", 100);
   const [busy, setBusy] = useState<"analyze" | "listings" | null>(null);
   const [log, setLog] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /** Filtros usados na última busca: se a pessoa afrouxar algum, precisa buscar de novo. */
+  const [searchedWith, setSearchedWith] = useState<string | null>(null);
 
-  const say = (m: string) => setLog((l) => [...l.slice(-6), m]);
+  const say = (m: string) => setLog((l) => [...l.slice(-7), m]);
+  const f = p.filters;
+  const setF = (patch: Partial<Filters>) => p.setFilters({ ...f, ...patch });
 
-  async function runAnalysis() {
-    if (!p.city || !p.work) return;
-    setBusy("analyze");
-    setError(null);
-    setLog([]);
-    p.setListings([]);
-    try {
-      const res = await api.analyze(
-        {
-          city: p.city,
-          work: p.work,
-          features: Object.entries(chosen).map(([id, radius]) => ({ id, radius })),
-          ...params,
-        },
-        (ev) => (ev.type === "progress" || ev.type === "warning") && say((ev.type === "warning" ? "⚠️ " : "") + ev.message),
-      );
-      p.setAnalysis(res);
-      p.setSelectedRegions(new Set(res.regions.slice(0, 5).map((r) => r.id)));
-      say(`Pronto: ${res.regions.length} regiões atendem a tudo.`);
-      if (res.cells.length) {
-        const lats = res.cells.map((c) => c.lat);
-        const lngs = res.cells.map((c) => c.lng);
-        p.onFit({ south: Math.min(...lats), north: Math.max(...lats), west: Math.min(...lngs), east: Math.max(...lngs) });
-      }
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function runListings() {
-    if (!p.city || !p.analysis) return;
-    const regions = p.analysis.regions.filter((r) => p.selectedRegions.has(r.id));
+  async function runListings(regions: Region[]) {
+    if (!p.city || !regions.length) return;
     setBusy("listings");
     setError(null);
-    setLog([]);
     p.setListings([]);
+    const sf = searchFilters(f);
     try {
       await api.listings(
-        { city: { name: p.city.name, stateCode: p.city.stateCode, bbox: p.city.bbox }, regions, sources, maxPerRegion },
+        { city: { name: p.city.name, stateCode: p.city.stateCode, bbox: p.city.bbox }, regions, sources, maxPerRegion, filters: sf },
         (ev) => {
           if (ev.type === "partial") p.setListings((prev) => [...prev, ...ev.data]);
           else if (ev.type === "progress" || ev.type === "warning") say((ev.type === "warning" ? "⚠️ " : "") + ev.message);
         },
       );
+      setSearchedWith(JSON.stringify(sf));
       say("Busca de imóveis concluída.");
     } catch (e) {
       setError((e as Error).message);
@@ -167,19 +110,57 @@ export function ExplorePanel(p: Props) {
     }
   }
 
+  /** Acha as regiões e já busca os imóveis nas melhores. */
+  async function runAll() {
+    if (!p.city || !p.work) return;
+    setBusy("analyze");
+    setError(null);
+    setLog([]);
+    p.setListings([]);
+    let res: AnalysisResult;
+    try {
+      res = await api.analyze(
+        {
+          city: p.city,
+          work: p.work,
+          features: Object.entries(chosen).map(([id, radius]) => ({ id, radius })),
+          ...params,
+        },
+        (ev) => (ev.type === "progress" || ev.type === "warning") && say((ev.type === "warning" ? "⚠️ " : "") + ev.message),
+      );
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(null);
+      return;
+    }
+    p.setAnalysis(res);
+    const top = res.regions.slice(0, TOP_REGIONS);
+    p.setSelectedRegions(new Set(top.map((r) => r.id)));
+    say(`${res.regions.length} regiões atendem a tudo.${top.length ? ` Buscando imóveis nas ${top.length} melhores…` : ""}`);
+    if (res.cells.length) {
+      const lats = res.cells.map((c) => c.lat);
+      const lngs = res.cells.map((c) => c.lng);
+      p.onFit({ south: Math.min(...lats), north: Math.max(...lats), west: Math.min(...lngs), east: Math.max(...lngs) });
+    }
+    if (top.length && sources.length) await runListings(top);
+    else setBusy(null);
+  }
+
   const lookup = useMemo(() => (p.analysis ? makeCellLookup(p.analysis.cells, p.analysis.cellSizeM) : null), [p.analysis]);
   const sorted = useMemo(() => {
     const withCommute = p.filtered.map((l) => ({ l, c: lookup?.(l) }));
     const key = (x: (typeof withCommute)[number]) =>
-      p.filters.sort === "commute" ? x.c?.commuteMin ?? 999 : p.filters.sort === "area" ? -(x.l.area ?? 0) : p.filters.basis === "total" ? x.l.total : x.l.rent;
+      f.sort === "commute" ? x.c?.commuteMin ?? 999 : f.sort === "area" ? -(x.l.area ?? 0) : f.basis === "total" ? x.l.total : x.l.rent;
     // Com comodidades exigidas, quem confirma tudo vem antes de quem não informa.
-    const wanted = p.filters.amenities ?? [];
+    const wanted = f.amenities ?? [];
     const rank = (x: (typeof withCommute)[number]) => (wanted.length ? amenityRank(x.l, wanted) : 0);
     return withCommute.sort((a, b) => rank(a) - rank(b) || key(a) - key(b));
-  }, [p.filtered, lookup, p.filters.sort, p.filters.basis, p.filters.amenities]);
+  }, [p.filtered, lookup, f.sort, f.basis, f.amenities]);
 
-  const f = p.filters;
-  const setF = (patch: Partial<Filters>) => p.setFilters({ ...f, ...patch });
+  const selected = p.analysis?.regions.filter((r) => p.selectedRegions.has(r.id)) ?? [];
+  const stale = searchedWith !== null && searchedWith !== JSON.stringify(searchFilters(f));
+  const num = (v: number | null | undefined) => (v ? String(v) : "");
+  const toNum = (s: string) => (s ? Number(s) : null);
 
   return (
     <>
@@ -229,23 +210,107 @@ export function ExplorePanel(p: Props) {
             Caminhada até o ponto: <b>{meters(params.maxWalkToStopM)}</b>
             <input type="range" min={200} max={1500} step={50} value={params.maxWalkToStopM} onChange={(e) => setParams({ ...params, maxWalkToStopM: Number(e.target.value) })} />
           </label>
-          <label>
-            Peso do trajeto na nota: <b>{Math.round(params.commuteWeight * 100)}%</b>
-            <input type="range" min={0} max={1} step={0.05} value={params.commuteWeight} onChange={(e) => setParams({ ...params, commuteWeight: Number(e.target.value) })} />
-          </label>
-          <label>
-            Precisão da grade:
-            <select value={params.cellSizeM} onChange={(e) => setParams({ ...params, cellSizeM: Number(e.target.value) })}>
-              <option value={300}>fina (300 m, mais lenta)</option>
-              <option value={500}>normal (500 m)</option>
-              <option value={800}>grossa (800 m, cidades grandes)</option>
-            </select>
-          </label>
+          <details>
+            <summary>Ajustes da análise</summary>
+            <label>
+              Peso do trajeto na nota: <b>{Math.round(params.commuteWeight * 100)}%</b>
+              <input type="range" min={0} max={1} step={0.05} value={params.commuteWeight} onChange={(e) => setParams({ ...params, commuteWeight: Number(e.target.value) })} />
+            </label>
+            <label>
+              Precisão da grade:
+              <select value={params.cellSizeM} onChange={(e) => setParams({ ...params, cellSizeM: Number(e.target.value) })}>
+                <option value={300}>fina (300 m, mais lenta)</option>
+                <option value={500}>normal (500 m)</option>
+                <option value={800}>grossa (800 m, cidades grandes)</option>
+              </select>
+            </label>
+          </details>
         </div>
-        <button className="primary" disabled={!p.city || !p.work || busy !== null} onClick={runAnalysis}>
-          {busy === "analyze" ? <><span className="spinner" /> Analisando…</> : "🔎 Analisar a cidade"}
+      </section>
+
+      <section className="step">
+        <h2><span className="num">4</span>O imóvel que você procura</h2>
+        <div className="filters">
+          <div className="chips">
+            {SEARCH_TYPES.map((t) => (
+              <button key={t} className={`chip ${f.types.includes(t) ? "on" : ""}`} onClick={() => setF({ types: f.types.includes(t) ? f.types.filter((x) => x !== t) : [...f.types, t] })}>
+                {PROPERTY_TYPE_LABEL[t]}
+              </button>
+            ))}
+          </div>
+          <div className="grid2">
+            <label>
+              Preço
+              <select value={f.basis} onChange={(e) => setF({ basis: e.target.value as Filters["basis"] })}>
+                <option value="total">total (aluguel + condomínio + IPTU)</option>
+                <option value="rent">só o aluguel</option>
+              </select>
+            </label>
+            <label>
+              Até (R$)
+              <input type="number" inputMode="numeric" min={0} step={100} placeholder="ex.: 2500" value={num(f.priceMax)} onChange={(e) => setF({ priceMax: toNum(e.target.value) })} />
+            </label>
+            <label>
+              Quartos
+              <select value={f.minBedrooms} onChange={(e) => setF({ minBedrooms: Number(e.target.value) })}>
+                {[0, 1, 2, 3, 4].map((n) => <option key={n} value={n}>{n ? `${n} ou mais` : "qualquer"}</option>)}
+              </select>
+            </label>
+            <label>
+              Banheiros
+              <select value={f.minBathrooms ?? 0} onChange={(e) => setF({ minBathrooms: Number(e.target.value) })}>
+                {[0, 1, 2, 3].map((n) => <option key={n} value={n}>{n ? `${n} ou mais` : "qualquer"}</option>)}
+              </select>
+            </label>
+            <label>
+              Vagas
+              <select value={f.minParking ?? 0} onChange={(e) => setF({ minParking: Number(e.target.value) })}>
+                {[0, 1, 2].map((n) => <option key={n} value={n}>{n ? `${n} ou mais` : "qualquer"}</option>)}
+              </select>
+            </label>
+            <label>
+              Área mínima (m²)
+              <input type="number" inputMode="numeric" min={0} step={5} placeholder="qualquer" value={num(f.minArea)} onChange={(e) => setF({ minArea: Number(e.target.value) || 0 })} />
+            </label>
+          </div>
+          <div className="row wrap">
+            {AMENITY_FILTERS.map((a) => {
+              const on = (f.amenities ?? []).includes(a.id);
+              return (
+                <label key={a.id} className="chip-check">
+                  <input type="checkbox" checked={on} onChange={() => setF({ amenities: on ? (f.amenities ?? []).filter((x) => x !== a.id) : [...(f.amenities ?? []), a.id] })} />
+                  {a.label}
+                </label>
+              );
+            })}
+          </div>
+          {(f.amenities ?? []).length > 0 && (
+            <label className="inline" title="Muitos anúncios não descrevem os armários; por padrão eles aparecem no fim da lista.">
+              <input type="checkbox" checked={!!f.hideUnknown} onChange={() => setF({ hideUnknown: !f.hideUnknown })} />
+              esconder anúncios que não informam
+            </label>
+          )}
+          <div className="row wrap">
+            {(["quintoandar", "vivareal"] as SourceId[]).map((s) => (
+              <label key={s} className="chip-check">
+                <input type="checkbox" checked={sources.includes(s)} onChange={() => setSources(sources.includes(s) ? sources.filter((x) => x !== s) : [...sources, s])} />
+                {SOURCE_LABEL[s]}
+                {s === "vivareal" && <small className="muted" title="O VivaReal costuma bloquear leitura automática (HTTP 403).">(costuma bloquear)</small>}
+              </label>
+            ))}
+            <label className="inline">
+              até
+              <select value={maxPerRegion} onChange={(e) => setMaxPerRegion(Number(e.target.value))}>
+                {[50, 100, 200, 300].map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+              por região
+            </label>
+          </div>
+        </div>
+        <button className="primary" disabled={!p.city || !p.work || busy !== null} onClick={runAll}>
+          {busy === "analyze" ? <><span className="spinner" /> Analisando a cidade…</> : busy === "listings" ? <><span className="spinner" /> Buscando imóveis…</> : "🔎 Encontrar regiões e imóveis"}
         </button>
-        {!p.work && <p className="hint">Marque o trabalho primeiro.</p>}
+        {!p.city ? <p className="hint">Escolha a cidade primeiro.</p> : !p.work && <p className="hint">Marque o trabalho primeiro.</p>}
         {busy === "analyze" && <p className="hint">A primeira análise de uma cidade baixa dados do OpenStreetMap e pode levar alguns minutos. Depois fica em cache.</p>}
       </section>
 
@@ -258,10 +323,10 @@ export function ExplorePanel(p: Props) {
 
       {p.analysis && (
         <section className="step">
-          <h2><span className="num">4</span>Melhores regiões</h2>
+          <h2><span className="num">5</span>Melhores regiões</h2>
           <p className="hint">
             {p.analysis.regions.length} bairros · {p.analysis.stats.cellsMatching} de {p.analysis.stats.cellsReachable} áreas alcançáveis atendem a tudo ·{" "}
-            {p.analysis.routes.length} linhas diretas. Marque as regiões para buscar imóveis.
+            {p.analysis.routes.length} linhas diretas. Marque ou desmarque regiões e busque de novo.
           </p>
           <div className="layers">
             {(["cells", "routes", "pois", "listings"] as const).map((k) => (
@@ -298,100 +363,52 @@ export function ExplorePanel(p: Props) {
               </li>
             ))}
           </ol>
+          {p.analysis.regions.length > 0 && (
+            <button className={stale ? "primary" : "ghost"} disabled={busy !== null || !selected.length || !sources.length} onClick={() => runListings(selected)}>
+              🏠 Buscar imóveis em {selected.length} região(ões){stale ? " com os filtros novos" : " de novo"}
+            </button>
+          )}
         </section>
       )}
 
-      {p.analysis && p.analysis.regions.length > 0 && (
+      {(p.listings.length > 0 || searchedWith !== null) && (
         <section className="step">
-          <h2><span className="num">5</span>Imóveis para alugar</h2>
+          <h2><span className="num">6</span>Imóveis para alugar</h2>
           <div className="row">
-            {(["quintoandar", "vivareal"] as SourceId[]).map((s) => (
-              <label key={s} className="chip-check">
-                <input type="checkbox" checked={sources.includes(s)} onChange={() => setSources(sources.includes(s) ? sources.filter((x) => x !== s) : [...sources, s])} />
-                {SOURCE_LABEL[s]}
-              </label>
-            ))}
-            <label className="inline">
-              até
-              <select value={maxPerRegion} onChange={(e) => setMaxPerRegion(Number(e.target.value))}>
-                {[30, 60, 100, 200].map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
-              por região
-            </label>
+            <span className="hint grow">
+              {p.filtered.length} de {p.listings.length} anúncios{stale ? " · filtros mudaram: busque de novo para ampliar" : ""}
+            </span>
+            <select value={f.sort} onChange={(e) => setF({ sort: e.target.value as Filters["sort"] })}>
+              <option value="price">Mais barato</option>
+              <option value="commute">Mais perto do trabalho</option>
+              <option value="area">Maior área</option>
+            </select>
           </div>
-          <button className="primary" disabled={busy !== null || !p.selectedRegions.size || !sources.length} onClick={runListings}>
-            {busy === "listings" ? <><span className="spinner" /> Buscando…</> : `🏠 Buscar imóveis em ${p.selectedRegions.size} região(ões)`}
-          </button>
-
-          {p.listings.length > 0 && (
-            <>
-              <div className="filters">
-                <div className="chips">
-                  {(Object.keys(PROPERTY_TYPE_LABEL) as PropertyType[]).map((t) => (
-                    <button key={t} className={`chip ${f.types.includes(t) ? "on" : ""}`} onClick={() => setF({ types: f.types.includes(t) ? f.types.filter((x) => x !== t) : [...f.types, t] })}>
-                      {PROPERTY_TYPE_LABEL[t]}
-                    </button>
-                  ))}
-                </div>
-                <div className="row">
-                  <select value={f.basis} onChange={(e) => setF({ basis: e.target.value as Filters["basis"] })}>
-                    <option value="total">Preço total</option>
-                    <option value="rent">Só aluguel</option>
-                  </select>
-                  <input type="number" placeholder="mín. R$" value={f.priceMin ?? ""} onChange={(e) => setF({ priceMin: e.target.value ? Number(e.target.value) : null })} />
-                  <input type="number" placeholder="máx. R$" value={f.priceMax ?? ""} onChange={(e) => setF({ priceMax: e.target.value ? Number(e.target.value) : null })} />
-                </div>
-                <div className="row">
-                  <select value={f.minBedrooms} onChange={(e) => setF({ minBedrooms: Number(e.target.value) })}>
-                    {[0, 1, 2, 3, 4].map((n) => <option key={n} value={n}>{n ? `${n}+ quartos` : "Qualquer nº de quartos"}</option>)}
-                  </select>
-                  <select value={f.sort} onChange={(e) => setF({ sort: e.target.value as Filters["sort"] })}>
-                    <option value="price">Mais barato</option>
-                    <option value="commute">Mais perto do trabalho</option>
-                    <option value="area">Maior área</option>
-                  </select>
-                </div>
-                <div className="row">
-                  {AMENITY_FILTERS.map((a) => {
-                    const on = (f.amenities ?? []).includes(a.id);
-                    return (
-                      <label key={a.id} className="chip-check">
-                        <input
-                          type="checkbox"
-                          checked={on}
-                          onChange={() => setF({ amenities: on ? (f.amenities ?? []).filter((x) => x !== a.id) : [...(f.amenities ?? []), a.id] })}
-                        />
-                        {a.label}
-                      </label>
-                    );
-                  })}
-                </div>
-                {(f.amenities ?? []).length > 0 && (
-                  <label className="inline" title="Muitos anúncios não descrevem os armários; por padrão eles aparecem no fim da lista.">
-                    <input type="checkbox" checked={!!f.hideUnknown} onChange={() => setF({ hideUnknown: !f.hideUnknown })} />
-                    esconder anúncios sem informação
-                  </label>
-                )}
-              </div>
-              <p className="hint">{p.filtered.length} de {p.listings.length} anúncios</p>
-              <ul className="listings">
-                {sorted.slice(0, 200).map(({ l, c }) => (
-                  <li key={l.id} onClick={() => p.onFocusListing(l.id)}>
-                    {l.image ? <img src={l.image} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <div className="noimg">🏠</div>}
-                    <div>
-                      <div className="lprice">{money(f.basis === "total" ? l.total : l.rent)}</div>
-                      <div className="ltitle">{l.typeLabel}{l.area ? ` · ${l.area} m²` : ""}{l.bedrooms ? ` · ${l.bedrooms} qto` : ""}</div>
-                      <div className="lmeta">{l.region} · {SOURCE_LABEL[l.source]}{c ? ` · 🚌 ~${c.commuteMin} min` : ""}</div>
-                      {l.amenities && l.amenities.length > 0 && (
-                        <div className="lmeta">{l.amenities.map((a) => AMENITY_TAG[a] ?? a).join(" · ")}</div>
-                      )}
-                    </div>
-                    <a href={l.url} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} title="Abrir anúncio">↗</a>
-                  </li>
-                ))}
-              </ul>
-            </>
+          {!p.listings.length && busy === null && (
+            <p className="hint">Nenhum anúncio com esses filtros nas regiões marcadas. Aumente o preço, marque mais regiões ou tire algum filtro.</p>
           )}
+          <ul className="listings">
+            {sorted.slice(0, 200).map(({ l, c }) => (
+              <li
+                key={l.id}
+                onClick={() => {
+                  p.onFocusListing(l.id);
+                  p.onOpenListing(l);
+                }}
+              >
+                <Photo className="thumb" src={l.image} />
+                <div>
+                  <div className="lprice">{money(f.basis === "total" ? l.total : l.rent)}{f.basis === "total" && l.total > l.rent ? <small> total</small> : null}</div>
+                  <div className="ltitle">
+                    {l.typeLabel}{l.area ? ` · ${l.area} m²` : ""}{l.bedrooms ? ` · ${l.bedrooms} qto` : ""}{l.parking ? ` · ${l.parking} vaga` : ""}
+                  </div>
+                  <div className="lmeta">{l.region} · {SOURCE_LABEL[l.source]}{c ? ` · 🚌 ~${c.commuteMin} min` : ""}</div>
+                  {l.amenities && l.amenities.length > 0 && <div className="lmeta">{l.amenities.map((a) => AMENITY_TAG[a] ?? a).join(" · ")}</div>}
+                </div>
+                <a href={l.url} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()} title="Abrir anúncio no site">↗</a>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
     </>

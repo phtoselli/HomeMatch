@@ -1,9 +1,8 @@
 import L from "leaflet";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import type { AnalysisResult, BBox, BusLine, City, FeatureDef, LatLng, Listing, Region } from "../shared/types";
-import { PROPERTY_TYPE_LABEL } from "../shared/types";
-import { makeCellLookup, meters, money, moneyShort, nearestStop, scoreColor, walkMin } from "./format";
+import { makeCellLookup, meters, moneyShort, scoreColor } from "./format";
 
 export interface Layers {
   routes: boolean;
@@ -30,6 +29,8 @@ interface Props {
   layers: Layers;
   fit: { bbox: BBox; key: number } | null;
   onBoundsChange?: (b: BBox) => void;
+  /** Clique num imóvel: abre os detalhes (modal). */
+  onOpenListing: (l: Listing) => void;
 }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -104,7 +105,7 @@ function Routes({ analysis, visible }: { analysis: AnalysisResult | null; visibl
   useLayer(
     (g) => {
       for (const r of analysis?.routes ?? []) {
-        L.polyline(r.path, { color: r.color, weight: r.mode === "bus" || r.mode === "trolleybus" ? 2.5 : 4.5, opacity: 0.75 })
+        L.polyline(r.shape ?? r.path, { color: r.color, weight: r.mode === "bus" || r.mode === "trolleybus" ? 2.5 : 4.5, opacity: 0.75 })
           .bindTooltip(`<b>${esc(r.ref ?? "")}</b> ${esc(r.name)}${r.operator ? `<br><small>${esc(r.operator)}</small>` : ""}`, { sticky: true })
           .addTo(g);
       }
@@ -115,20 +116,59 @@ function Routes({ analysis, visible }: { analysis: AnalysisResult | null; visibl
   return null;
 }
 
+/** A partir deste zoom os lugares viram pins com ícone (🛒, 🌳…); antes, pontos coloridos. */
+const PIN_ZOOM = 14;
+/** Até quantos lugares dá para mostrar todos como pin sem pesar o mapa. */
+const MAX_PINS = 300;
+
+/** Pin com o ícone da característica (🛒 mercado, 🌳 parque, 🏋️ academia…) para cada lugar ativo. */
 function Pois({ analysis, features, visible }: { analysis: AnalysisResult | null; features: FeatureDef[]; visible: boolean }) {
+  const icons = useMemo(() => {
+    const m = new Map<string, L.DivIcon>();
+    for (const f of features) {
+      m.set(
+        f.id,
+        L.divIcon({
+          className: "",
+          html: `<div class="pin-poi" style="--c:${f.color}"><span>${f.emoji}</span></div>`,
+          iconSize: [28, 34],
+          iconAnchor: [14, 33],
+          tooltipAnchor: [0, -28],
+        }),
+      );
+    }
+    return m;
+  }, [features]);
+  // De longe, pontos leves em canvas; de perto, pins com ícone só para o que está na tela
+  // (com mercado + farmácia + padaria numa cidade grande seriam milhares de elementos no DOM).
+  const map = useMap();
+  const [view, setView] = useState(() => ({ zoom: map.getZoom(), bounds: map.getBounds() }));
+  useMapEvents({ moveend: () => setView({ zoom: map.getZoom(), bounds: map.getBounds() }) });
+  const total = useMemo(() => Object.values(analysis?.pois ?? {}).reduce((n, l) => n + l.length, 0), [analysis]);
+  // Poucos lugares: sempre pin. Muitos: pin só de perto (e só na área visível).
+  const few = total <= MAX_PINS;
+  const close = few || view.zoom >= PIN_ZOOM;
   useLayer(
     (g) => {
       const renderer = L.canvas({ padding: 0.3 });
+      const area = view.bounds.pad(0.3);
       for (const [fid, list] of Object.entries(analysis?.pois ?? {})) {
         const def = features.find((f) => f.id === fid);
+        const icon = icons.get(fid);
         for (const p of list) {
-          L.circleMarker([p.lat, p.lng], { renderer, radius: 4, color: "#fff", weight: 1, fillColor: def?.color ?? "#333", fillOpacity: 0.95 })
-            .bindTooltip(`${def?.emoji ?? ""} ${esc(p.name ?? def?.label ?? fid)}`)
+          if (!few && close && !area.contains([p.lat, p.lng])) continue;
+          const tip = `${def?.emoji ?? ""} <b>${esc(p.name ?? def?.label ?? fid)}</b>${def ? `<br><small>${esc(def.label)}</small>` : ""}`;
+          (close && icon
+            ? L.marker([p.lat, p.lng], { icon, riseOnHover: true, zIndexOffset: -100 })
+            : L.circleMarker([p.lat, p.lng], { renderer, radius: 5, color: "#fff", weight: 1.5, fillColor: def?.color ?? "#333", fillOpacity: 0.95 })
+          )
+            .bindTooltip(tip, { direction: "top" })
             .addTo(g);
         }
       }
     },
-    [analysis, features],
+    // De longe não precisa refazer a cada arrasto; de perto, refaz para a área visível.
+    [analysis, icons, close, !few && close ? view.bounds.toBBoxString() : ""],
     visible,
   );
   return null;
@@ -211,43 +251,21 @@ function BusLines({ lines }: { lines: BusLine[] }) {
   return null;
 }
 
-function popupHtml(l: Listing, extra: string): string {
-  const specs = [
-    l.area && `${l.area} m²`,
-    l.bedrooms != null && `${l.bedrooms} qto${l.bedrooms === 1 ? "" : "s"}`,
-    l.bathrooms != null && `${l.bathrooms} banh.`,
-    l.parking != null && `${l.parking} vaga${l.parking === 1 ? "" : "s"}`,
-  ].filter(Boolean).join(" · ");
-  const price = l.rent
-    ? `<div class="pop-price">${money(l.total)} <small>${l.total > l.rent ? "total/mês" : "/mês"}</small></div>
-       ${l.total > l.rent ? `<div class="pop-sub">Aluguel ${money(l.rent)} · cond./IPTU ${money(l.total - l.rent)}</div>` : ""}`
-    : `<div class="pop-sub">Preço não encontrado na página</div>`;
-  return `<div class="pop">
-    ${l.image ? `<img src="${esc(l.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ""}
-    <div class="pop-body">
-      <div class="pop-src">${SOURCE_LABEL[l.source] ?? l.source} · ${esc(PROPERTY_TYPE_LABEL[l.type])}</div>
-      ${price}
-      ${specs ? `<div class="pop-specs">${specs}</div>` : ""}
-      <div class="pop-addr">${esc(l.address ?? l.title)}${l.approxLocation ? " <em>(posição aproximada pelo endereço)</em>" : ""}</div>
-      ${extra}
-      <a href="${esc(l.url)}" target="_blank" rel="noopener">Ver anúncio ↗</a>
-    </div></div>`;
-}
 
 function ListingMarkers({
   listings,
   analysis,
-  busLines,
   focus,
   visible,
   numbered,
+  onOpen,
 }: {
   listings: (Listing & { index?: number })[];
   analysis: AnalysisResult | null;
-  busLines: BusLine[];
   focus: string | null;
   visible: boolean;
   numbered?: boolean;
+  onOpen: (l: Listing) => void;
 }) {
   const map = useMap();
   const markers = useRef(new Map<string, L.Marker>());
@@ -270,26 +288,20 @@ function ListingMarkers({
               iconAnchor: [30, 12],
             });
         const cell = lookup?.(l);
-        let extra = cell ? `<div class="pop-commute">🚌 ~${cell.commuteMin} min até o trabalho · ${esc(cell.via)}</div>` : "";
-        for (const line of busLines) {
-          const ns = nearestStop(line, l);
-          if (ns) extra += `<div class="pop-commute">🚏 ${esc(line.ref ?? line.name)}: parada a ${meters(ns.dist)} (~${walkMin(ns.dist)} min a pé)</div>`;
-        }
-        const m = L.marker([l.lat, l.lng], { icon, riseOnHover: true, zIndexOffset: numbered ? 800 : 0 })
-          .bindPopup(popupHtml(l, extra), { maxWidth: 280, minWidth: 260 })
+        const tip = `${esc(l.typeLabel)}${l.bedrooms ? ` · ${l.bedrooms} qto` : ""}${l.area ? ` · ${l.area} m²` : ""}${cell ? ` · 🚌 ~${cell.commuteMin} min` : ""}<br><small>clique para ver detalhes</small>`;
+        const m = L.marker([l.lat, l.lng], { icon, riseOnHover: true, zIndexOffset: numbered ? 800 : 200 })
+          .bindTooltip(tip, { direction: "top", offset: [0, -10] })
+          .on("click", () => onOpen(l))
           .addTo(g);
         markers.current.set(l.id, m);
       }
     },
-    [listings, lookup, busLines],
+    [listings, lookup, onOpen],
     visible,
   );
   useEffect(() => {
     const m = focus ? markers.current.get(focus) : undefined;
-    if (m) {
-      map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 15), { duration: 0.6 });
-      setTimeout(() => m.openPopup(), 650);
-    }
+    if (m) map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 15), { duration: 0.6 });
   }, [focus, map]);
   return null;
 }
@@ -323,8 +335,8 @@ export function MapView(p: Props) {
       <Pois analysis={p.analysis} features={p.features} visible={p.layers.pois} />
       <BusLines lines={p.busLines} />
       {p.analysis && <RegionBadges regions={p.analysis.regions} selected={p.selectedRegions} onToggle={p.onToggleRegion} />}
-      <ListingMarkers listings={p.listings} analysis={p.analysis} busLines={p.busLines} focus={p.focusListing} visible={p.layers.listings} />
-      <ListingMarkers listings={p.myLinks} analysis={p.analysis} busLines={p.busLines} focus={p.focusListing} visible numbered />
+      <ListingMarkers listings={p.listings} analysis={p.analysis} focus={p.focusListing} visible={p.layers.listings} onOpen={p.onOpenListing} />
+      <ListingMarkers listings={p.myLinks} analysis={p.analysis} focus={p.focusListing} visible numbered onOpen={p.onOpenListing} />
       <WorkMarker work={p.work} />
     </MapContainer>
   );

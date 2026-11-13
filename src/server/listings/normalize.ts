@@ -1,16 +1,28 @@
 import type { PropertyType } from "../../shared/types.js";
 
-/** Converte o rótulo de tipo de cada site para um tipo comum. */
+// Ordem = desempate quando dois casam na mesma posição ("casa de condomínio" antes de "casa").
+const TYPE_PATTERNS: [PropertyType, RegExp][] = [
+  ["studio", /studio|kitnet|kitchenette|loft|quitinete/],
+  ["casa_condominio", /casa\s*(?:de|em)?\s*(?:condominio|vila)|casacondominio|sobrado\s*(?:de|em)\s*condominio/],
+  ["apartamento", /apartamento|apartment|cobertura|flat|duplex|triplex|garden/],
+  ["casa", /casa|sobrado|residence|house/],
+];
+
+/**
+ * Converte o rótulo de tipo de cada site para um tipo comum. Vale a palavra que aparece primeiro:
+ * em "Apartamento … na Vila Itapura, condomínio R$ 600" o tipo é apartamento, não casa de condomínio.
+ */
 export function normalizeType(label: string): PropertyType {
   const s = label
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase();
-  if (/studio|kitnet|kitchenette|loft|quitinete/.test(s)) return "studio";
-  if (/condominio|casacondominio|vila/.test(s)) return "casa_condominio";
-  if (/casa|sobrado|residence|house/.test(s)) return "casa";
-  if (/apartamento|apartment|cobertura|flat|duplex|triplex|garden/.test(s)) return "apartamento";
-  return "outro";
+  let best: { type: PropertyType; at: number } | null = null;
+  for (const [type, re] of TYPE_PATTERNS) {
+    const at = s.search(re);
+    if (at >= 0 && (!best || at < best.at)) best = { type, at };
+  }
+  return best?.type ?? "outro";
 }
 
 /** "R$ 7.000" → 7000; "1.605,50" → 1605.5. undefined se não houver número. */
@@ -61,3 +73,6 @@ export function detectAmenities(text: string | undefined | null): string[] {
     .replace(/\s+/g, " ");
   return AMENITY_PATTERNS.filter(([, re]) => re.test(s)).map(([id]) => id);
 }
+
+
+export { matchesFilters } from "../../shared/filters.js";

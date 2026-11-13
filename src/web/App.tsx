@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AnalysisResult, BBox, BusLine, City, FeatureDef, LatLng, LinkResult, Listing, TransitOperatorInfo } from "../shared/types";
 import { api } from "./api";
 import { ExplorePanel, DEFAULT_FILTERS, applyFilters, type Filters } from "./components/ExplorePanel";
 import { LinksPanel } from "./components/LinksPanel";
+import { ListingModal } from "./components/ListingModal";
 import { SearchBox } from "./components/SearchBox";
 import { MapView, type Layers, type NumberedListing } from "./MapView";
+import { makeCellLookup } from "./format";
 import { usePersistent } from "./usePersistent";
 
 type Mode = "explore" | "links";
@@ -19,7 +21,7 @@ export function App() {
   const [selectedRegions, setSelectedRegions] = useState<Set<string>>(new Set());
   const [listings, setListings] = useState<Listing[]>([]);
   const [filters, setFilters] = usePersistent<Filters>("filters", DEFAULT_FILTERS);
-  const [layers, setLayers] = useState<Layers>({ routes: true, pois: false, cells: true, listings: true });
+  const [layers, setLayers] = useState<Layers>({ routes: true, pois: true, cells: true, listings: true });
   const [linkResults, setLinkResults] = usePersistent<LinkResult[]>("links", []);
   const [busLines, setBusLines] = useState<BusLine[]>([]);
   const [busQueries, setBusQueries] = usePersistent<string[]>("busLines", []);
@@ -28,21 +30,41 @@ export function App() {
   const [viewBBox, setViewBBox] = useState<BBox | null>(null);
   const [loadingCity, setLoadingCity] = useState(false);
   const [operator, setOperator] = useState<TransitOperatorInfo | null>(null);
+  const [openListing, setOpenListing] = useState<Listing | null>(null);
+  // Restauração das linhas salvas: enquanto não termina, não regrava a lista (senão ela vira []).
+  const restoringLines = useRef(busQueries.length > 0);
+  // Linhas que não voltaram (Overpass fora do ar etc.): continuam salvas para a próxima vez.
+  const unrestored = useRef<Set<string>>(new Set());
 
   const fitTo = (bbox: BBox) => setFit({ bbox, key: Date.now() });
   const focusListing = (id: string) => {
     setFocus(null);
     setTimeout(() => setFocus(id), 0);
+    // Da lista também abre os detalhes.
+    const l = listings.find((x) => x.id === id) ?? linkResults.find((r) => r.listing?.id === id)?.listing;
+    if (l) setOpenListing(l);
   };
+  const cellLookup = useMemo(() => (analysis ? makeCellLookup(analysis.cells, analysis.cellSizeM) : null), [analysis]);
 
   useEffect(() => {
     api.features().then(setFeatures).catch(() => setFeatures([]));
     if (city) fitTo(city.bbox);
     // Linhas salvas: guarda só o id (OSM ou "emdec:353:1") e busca de novo (o servidor tem cache).
-    for (const id of busQueries) {
-      const q = id.includes(":") ? id : `https://www.openstreetmap.org/relation/${id}`;
-      api.bus(q, undefined, city).then((ls) => setBusLines((prev) => [...prev.filter((x) => x.id !== id), ...ls])).catch(() => {});
-    }
+    Promise.allSettled(
+      busQueries.map((id) => {
+        const q = id.includes(":") ? id : `https://www.openstreetmap.org/relation/${id}`;
+        return api.bus(q, undefined, city).then(
+          (ls) => {
+            if (!ls.length) unrestored.current.add(id);
+            setBusLines((prev) => [...prev.filter((x) => x.id !== id), ...ls]);
+          },
+          () => unrestored.current.add(id),
+        );
+      }),
+    ).then(() => {
+      restoringLines.current = false;
+      setBusLines((prev) => [...prev]); // regrava agora, com o que voltou + o que falhou
+    });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Quem publica as linhas de ônibus da cidade escolhida (ex.: Campinas → EMDEC).
@@ -51,7 +73,21 @@ export function App() {
     if (city) api.operator(city).then(setOperator).catch(() => setOperator(null));
   }, [city?.osmId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => setBusQueries(busLines.map((l) => l.id)), [busLines]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (restoringLines.current) return;
+    setBusQueries([...new Set([...busLines.map((l) => l.id), ...unrestored.current])]);
+  }, [busLines]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Remover/limpar linhas pela interface também tira as que não voltaram. */
+  const setLinesFromUi = (v: BusLine[] | ((p: BusLine[]) => BusLine[])) => {
+    setBusLines((prev) => {
+      const next = typeof v === "function" ? v(prev) : v;
+      const kept = new Set(next.map((l) => l.id));
+      for (const l of prev) if (!kept.has(l.id)) unrestored.current.delete(l.id);
+      if (!next.length) unrestored.current.clear();
+      return next;
+    });
+  };
 
   const filtered = useMemo(() => applyFilters(listings, filters), [listings, filters]);
   const myLinks: NumberedListing[] = useMemo(
@@ -90,7 +126,7 @@ export function App() {
         <section className="step">
           <h2><span className="num">1</span>Cidade</h2>
           <SearchBox
-            placeholder="Ex.: Campinas, São Paulo, Curitiba…"
+            placeholder="Cidade (ex.: Campinas) e Enter"
             initial={city ? `${city.name}${city.stateCode ? ` - ${city.stateCode}` : ""}` : ""}
             search={api.cities}
             minChars={2}
@@ -114,7 +150,7 @@ export function App() {
         <section className="step">
           <h2><span className="num">2</span>Trabalho</h2>
           <SearchBox
-            placeholder="Endereço do trabalho"
+            placeholder="Endereço do trabalho e Enter"
             initial={work?.label ?? ""}
             search={(q) => api.geocode(q, city?.bbox)}
             onSelect={(pl) => {
@@ -153,6 +189,7 @@ export function App() {
             setLayers={setLayers}
             onFit={fitTo}
             onFocusListing={focusListing}
+            onOpenListing={setOpenListing}
           />
         ) : (
           <LinksPanel
@@ -162,7 +199,7 @@ export function App() {
             results={linkResults}
             setResults={setLinkResults}
             lines={busLines}
-            setLines={setBusLines}
+            setLines={setLinesFromUi}
             operator={operator}
             onFit={fitTo}
             onFocusListing={focusListing}
@@ -194,6 +231,7 @@ export function App() {
           myLinks={myLinks}
           busLines={busLines}
           focusListing={focus}
+          onOpenListing={setOpenListing}
           layers={layers}
           fit={fit}
           onBoundsChange={setViewBBox}
@@ -207,6 +245,15 @@ export function App() {
           </div>
         )}
       </main>
+      {openListing && (
+        <ListingModal
+          listing={openListing}
+          cell={cellLookup?.(openListing)}
+          work={work}
+          busLines={busLines}
+          onClose={() => setOpenListing(null)}
+        />
+      )}
     </div>
   );
 }

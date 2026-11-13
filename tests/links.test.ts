@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildBusQuery, parseBusLines, parseBusQuery, refCandidates } from "../src/server/busline.js";
-import { assertPublicUrl, extractListingInfo, infoFromUrl, sourceOf } from "../src/server/links.js";
+import { buildBusQuery, buildNearQuery, parseBusLines, parseBusQuery, refCandidates } from "../src/server/busline.js";
+import { assertPublicUrl, extractListingInfo, infoFromUrl, isPrivateAddress, sourceOf } from "../src/server/links.js";
 import type { OsmElement } from "../src/server/osm/overpass.js";
 
 const fx = (f: string) => readFileSync(join(__dirname, "fixtures", f), "utf8");
@@ -58,6 +58,17 @@ describe("extractListingInfo", () => {
     expect(() => assertPublicUrl("http://192.168.0.10/")).toThrow();
     expect(() => assertPublicUrl("file:///etc/passwd")).toThrow();
   });
+
+  it("rede local disfarçada (IP decimal, hexadecimal, IPv6) também é bloqueada", () => {
+    for (const u of ["http://2130706433/", "http://0x7f.1/", "http://127.1/", "http://[::1]/", "http://[::ffff:127.0.0.1]/", "http://[fd00::1]/", "http://100.64.0.1/", "http://app.localhost/"]) {
+      expect(() => assertPublicUrl(u), u).toThrow();
+    }
+    expect(assertPublicUrl("https://www.quintoandar.com.br/imovel/1").hostname).toBe("www.quintoandar.com.br");
+    expect(isPrivateAddress("8.8.8.8")).toBe(false);
+    expect(isPrivateAddress("2606:4700::1111")).toBe(false);
+    expect(isPrivateAddress("172.20.1.1")).toBe(true);
+    expect(isPrivateAddress("172.32.1.1")).toBe(false);
+  });
 });
 
 describe("linha de ônibus", () => {
@@ -97,5 +108,18 @@ describe("linha de ônibus", () => {
     expect(lines).toHaveLength(1); // casou pelo link: a outra variante sai
     expect(lines[0]!.segments).toHaveLength(2);
     expect(lines[0]!.stops.map((s) => s.name)).toEqual(["Pça. A", "Term. B"]);
+  });
+});
+
+describe("linhas perto do trabalho (OSM)", () => {
+  it("procura pontos no raio e as rotas que param neles, com geometria", () => {
+    const q = buildNearQuery({ lat: -22.8213198, lng: -47.0351776 }, 700);
+    expect(q).toContain("around:700,-22.821320,-47.035178");
+    expect(q).toContain("rel(bn.s)");
+    expect(q).toContain("out geom");
+  });
+  it("Linha 353 sem ref no OSM é achada pelo número no nome", () => {
+    const q = buildBusQuery(parseBusQuery("353"), { south: -23, west: -47.3, north: -22.7, east: -46.8 });
+    expect(q).toContain("[\"name\"~\"(^|[^0-9])353([^0-9]|$)\",i]");
   });
 });

@@ -93,7 +93,11 @@ export function LinksPanel(p: Props) {
     if (!p.city || !p.work) return;
     setBusy("bus");
     setError(null);
-    setMsg(`Procurando no site da ${p.operator?.name ?? "operadora"} as linhas com parada perto do trabalho… (a 1ª vez baixa a rede toda, ~15 MB)`);
+    setMsg(
+      p.operator
+        ? `Procurando no site da ${p.operator.name} as linhas com parada perto do trabalho… (a 1ª vez baixa a rede toda, ~15 MB)`
+        : "Procurando no OpenStreetMap as linhas com parada perto do trabalho… (pode levar ~1 min)",
+    );
     try {
       const found = await api.busNear(p.work, p.city);
       if (!found.length) {
@@ -102,7 +106,7 @@ export function LinksPanel(p: Props) {
         return;
       }
       p.setLines((prev) => [...prev.filter((l) => !found.some((f) => f.id === l.id)), ...found]);
-      const refs = [...new Set(found.map((l) => l.ref))];
+      const refs = [...new Set(found.map((l) => l.ref ?? l.name))];
       setMsg(`${refs.length} linha(s) passam perto do trabalho: ${refs.join(", ")}. Clique numa linha para ver só o trajeto dela.`);
       p.onFit(bboxOfPoints(found.flatMap((l) => l.segments.flat().map(([lat, lng]) => ({ lat, lng })))));
     } catch (e) {
@@ -209,10 +213,14 @@ export function LinksPanel(p: Props) {
           </button>
         </div>
         {!p.city && <p className="hint">Sem cidade escolhida, a busca usa a área visível do mapa.</p>}
-        {p.operator && (
+        {p.city && (
           <>
             <p className="hint">
-              Em {p.city?.name}, as linhas vêm do site oficial da <b>{p.operator.name}</b>: trajeto e todos os pontos de parada.
+              {p.operator ? (
+                <>Em {p.city.name}, as linhas vêm do site oficial da <b>{p.operator.name}</b>: trajeto e todos os pontos de parada.</>
+              ) : (
+                <>Em {p.city.name}, as linhas vêm do OpenStreetMap (pode faltar alguma linha).</>
+              )}
             </p>
             <button className="ghost" disabled={busy !== null || !p.work} onClick={nearWork}>
               🔎 Linhas que passam perto do trabalho{!p.work ? " (marque o trabalho)" : ""}

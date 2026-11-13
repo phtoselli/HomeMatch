@@ -1,7 +1,8 @@
 import type { Listing, ListingsRequest, SourceId } from "../../shared/types.js";
 import { inBBox, padBBox } from "../geo.js";
+import { matchesFilters } from "./normalize.js";
 import { quintoAndar } from "./quintoandar.js";
-import type { SourceAdapter } from "./types.js";
+import { SourceBlockedError, type SourceAdapter } from "./types.js";
 import { vivaReal } from "./vivareal.js";
 
 export const SOURCES: Record<SourceId, SourceAdapter> = {
@@ -27,12 +28,14 @@ export async function searchListings(req: ListingsRequest, emit: Emit): Promise<
             city: req.city,
             region,
             max: req.maxPerRegion,
+            filters: req.filters,
             log: (message) => emit({ type: "progress", message }),
           });
           const box = padBBox(region.bbox, 800);
           const fresh: Listing[] = [];
           for (const l of got) {
             if (!l.approxLocation && !inBBox(l, box)) continue; // fora da região pedida
+            if (!matchesFilters(l, req.filters)) continue; // o site nem sempre aplica todos os filtros
             if (all.has(l.id)) continue;
             const withRegion = { ...l, region: region.name };
             all.set(l.id, withRegion);
@@ -40,6 +43,10 @@ export async function searchListings(req: ListingsRequest, emit: Emit): Promise<
           }
           if (fresh.length) emit({ type: "partial", data: fresh });
         } catch (e) {
+          if (e instanceof SourceBlockedError) {
+            emit({ type: "warning", message: `${src.label}: ${e.message}. Pulando as outras regiões nessa fonte.` });
+            break;
+          }
           emit({ type: "warning", message: `${src.label} · ${region.name}: falhou (${(e as Error).message})` });
         }
       }

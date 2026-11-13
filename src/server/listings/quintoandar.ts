@@ -1,4 +1,4 @@
-import type { BBox, Listing } from "../../shared/types.js";
+import type { BBox, Listing, ListingFilters, PropertyType } from "../../shared/types.js";
 import { BROWSER_UA, HOUR, cached, httpJson } from "../http.js";
 import { normalizeType, slugify } from "./normalize.js";
 import type { SourceAdapter } from "./types.js";
@@ -83,8 +83,22 @@ export function parseQuintoAndar(json: QaResponse): Listing[] {
   return out;
 }
 
-export function buildQaBody(bbox: BBox, citySlug: string, offset: number) {
+/** Tipos que a busca do QuintoAndar aceita (casa de condomínio não tem código conhecido: filtramos depois). */
+const QA_TYPE: Partial<Record<PropertyType, string>> = { apartamento: "APARTMENT", casa: "HOUSE", studio: "STUDIO" };
+
+const range = (min?: number | null, max?: number | null) => ({
+  range: { ...(min ? { min } : {}), ...(max ? { max } : {}) },
+});
+
+export function buildQaBody(bbox: BBox, citySlug: string, offset: number, f?: ListingFilters) {
   const center = { lat: (bbox.north + bbox.south) / 2, lng: (bbox.east + bbox.west) / 2 };
+  // Só manda o tipo quando todos os escolhidos têm código; senão busca tudo e o servidor filtra.
+  const types = f?.types.length && f.types.every((t) => QA_TYPE[t]) ? f.types.map((t) => QA_TYPE[t]!) : [];
+  // O site só filtra pelo custo total; no modo "só aluguel" o servidor filtra depois.
+  const priceRange =
+    f && f.basis === "total" && (f.priceMin || f.priceMax)
+      ? [{ costType: "TOTAL_COST", ...range(f.priceMin, f.priceMax) }]
+      : [];
   return {
     slug: citySlug,
     topics: [],
@@ -101,7 +115,7 @@ export function buildQaBody(bbox: BBox, citySlug: string, offset: number) {
         neighborhoods: [],
         countryCode: "BR",
       },
-      priceRange: [],
+      priceRange,
       availability: "ANY",
       occupancy: "ANY",
       partnerIds: [],
@@ -111,13 +125,13 @@ export function buildQaBody(bbox: BBox, citySlug: string, offset: number) {
       selectedHouses: [],
       categories: [],
       houseSpecs: {
-        area: { range: {} },
-        houseTypes: [],
+        area: range(f?.minArea),
+        houseTypes: types,
         amenities: [],
         installations: [],
-        bathrooms: { range: {} },
-        bedrooms: { range: {} },
-        parkingSpace: { range: {} },
+        bathrooms: range(f?.minBathrooms),
+        bedrooms: range(f?.minBedrooms),
+        parkingSpace: range(f?.minParking),
         suites: { range: {} },
       },
       origin: "HYBRID",
@@ -129,11 +143,11 @@ export function buildQaBody(bbox: BBox, citySlug: string, offset: number) {
 export const quintoAndar: SourceAdapter = {
   id: "quintoandar",
   label: "QuintoAndar",
-  async search({ city, region, max, log }) {
+  async search({ city, region, max, filters, log }) {
     const slug = `${slugify(city.name)}-${(city.stateCode ?? "").toLowerCase()}-brasil`;
     const out: Listing[] = [];
     for (let offset = 0; offset < max; offset += PAGE_SIZE) {
-      const body = JSON.stringify(buildQaBody(region.bbox, slug, offset));
+      const body = JSON.stringify(buildQaBody(region.bbox, slug, offset, filters));
       const json = await cached("quintoandar", body, 6 * HOUR, () =>
         httpJson<QaResponse>(API, {
           method: "POST",

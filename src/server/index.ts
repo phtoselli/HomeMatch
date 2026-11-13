@@ -5,7 +5,7 @@ import fastifyStatic from "@fastify/static";
 import { z } from "zod";
 import type { AnalyzeRequest, LinkResult, LinksRequest, ListingsRequest, StreamEvent } from "../shared/types.js";
 import { analyze } from "./analysis.js";
-import { findBusLines } from "./busline.js";
+import { findBusLines, findBusLinesNear } from "./busline.js";
 import { operatorById, operatorFor } from "./operators/index.js";
 import { resolveLink } from "./links.js";
 import { FEATURES } from "./features.js";
@@ -39,6 +39,18 @@ const listingsSchema = z.object({
     .max(15),
   sources: z.array(z.enum(["quintoandar", "vivareal"])).min(1),
   maxPerRegion: z.number().min(10).max(300),
+  filters: z
+    .object({
+      types: z.array(z.enum(["apartamento", "casa", "casa_condominio", "studio", "outro"])),
+      priceMin: z.number().nullable(),
+      priceMax: z.number().nullable(),
+      basis: z.enum(["total", "rent"]),
+      minBedrooms: z.number().min(0),
+      minBathrooms: z.number().min(0).optional(),
+      minParking: z.number().min(0).optional(),
+      minArea: z.number().min(0).optional(),
+    })
+    .optional(),
 });
 
 /** Resposta em NDJSON: uma linha JSON por evento (progresso, parciais, resultado). */
@@ -188,7 +200,8 @@ app.get("/api/bus/near", async (req) => {
     })
     .parse(req.query);
   const op = operatorFor(cityOf(q));
-  if (!op) return [];
+  // Sem operador cadastrado, as linhas do OpenStreetMap que param perto.
+  if (!op) return findBusLinesNear({ lat: q.lat, lng: q.lng }, q.radius, q.max);
   return op.linesNear({ lat: q.lat, lng: q.lng }, q.radius, q.max);
 });
 

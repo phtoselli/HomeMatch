@@ -57,3 +57,33 @@ describe("transit", () => {
     expect(near.via).toBe("a pé");
   });
 });
+
+describe("baldeação e desembarque", () => {
+  // Linha A vai ao trabalho (norte → sul). Linha B corre de leste a oeste e cruza A em -23.57.
+  const lineA = { id: "A", ref: "A", name: "A", mode: "bus" as const, color: "#000", ptv2: true,
+    path: stopsLat.map((lat) => [lat, -46.65] as [number, number]) };
+  const lineB = { id: "B", ref: "B", name: "B", mode: "bus" as const, color: "#000", ptv2: true,
+    path: [-46.60, -46.61, -46.62, -46.63, -46.64, -46.6505].map((lng) => [-23.57, lng] as [number, number]) };
+
+  it("sem baldeação, a linha B (que não passa perto do trabalho) não conta", () => {
+    const stops = boardingStops([lineA, lineB], work);
+    expect(stops.some((s) => s.routeId === "B")).toBe(false);
+  });
+
+  it("com baldeação, B leva até a A: tempo inclui as duas esperas", () => {
+    const stops = boardingStops([lineA, lineB], work, undefined, { transfers: true });
+    const b0 = stops.find((s) => s.routeId === "B" && s.lng === -46.6)!;
+    expect(b0).toBeDefined();
+    expect(b0.label).toBe("Ônibus B + Ônibus A");
+    const a3 = stops.find((s) => s.routeId === "A" && s.lat === -23.57)!;
+    // 8 min de espera da B + viagem + 3 de folga + valor de embarcar na A ali
+    expect(b0.valueMin).toBeGreaterThan(a3.valueMin + 8 + 3);
+  });
+
+  it("parada só de desembarque não vira ponto de embarque, mas ainda dá para descer nela", () => {
+    const alightOnly = stopsLat.map((_, i) => i === 1);
+    const stops = boardingStops([{ ...lineA, alightOnly }], work);
+    expect(stops.find((s) => s.lat === -23.56)).toBeUndefined();
+    expect(stops.find((s) => s.lat === -23.55)).toBeDefined();
+  });
+});

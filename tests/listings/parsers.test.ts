@@ -21,6 +21,16 @@ describe("normalize", () => {
     expect(normalizeType("Apartamento")).toBe("apartamento");
     expect(normalizeType("Cobertura")).toBe("apartamento");
   });
+
+  it("normalizeType: vale a primeira palavra de tipo (bairro \"Vila …\" ou condomínio não viram casa)", () => {
+    expect(normalizeType("Apartamento com 2 quartos para alugar, 60m² - Vila Itapura, condomínio R$ 600")).toBe("apartamento");
+    expect(normalizeType("Apartamento https://www.vivareal.com.br/imovel/apartamento-2-quartos-vila-industrial-campinas-60m2-aluguel-RS2200-id-1/")).toBe("apartamento");
+    expect(normalizeType("Casa em condomínio fechado, 3 quartos")).toBe("casa_condominio");
+    expect(normalizeType("Casa de vila no Cambuí")).toBe("casa_condominio");
+    expect(normalizeType("Casa com 2 quartos na Vila Nova")).toBe("casa");
+    expect(normalizeType("Kitnet perto do apartamento modelo")).toBe("studio");
+    expect(normalizeType("Sala comercial")).toBe("outro");
+  });
 });
 
 describe("QuintoAndar", () => {

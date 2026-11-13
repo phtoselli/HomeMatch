@@ -74,6 +74,8 @@ out center qt;`;
 
 export interface ParsedRoute extends TransitRoute {
   ptv2: boolean;
+  /** Paradas só de desembarque (mesmo índice de `path`): dá para descer, não para embarcar. */
+  alightOnly?: boolean[];
 }
 
 function normalizeMode(route: string): TransitMode {
@@ -134,42 +136,95 @@ export interface BoardingStop extends LatLng {
   label: string;
 }
 
+/** Baldeação: até onde andar entre o ponto de descida e o da segunda linha, e a folga extra. */
+export const TRANSFER = { maxWalkM: 400, slackMin: 3 };
+
+type Exit = (pt: LatLng, rail: boolean) => { cost: number; via?: string } | null;
+
 /**
- * Para cada parada de cada linha, o menor tempo de "embarcar aqui e chegar ao trabalho",
- * descendo em uma parada posterior que esteja a uma caminhada do trabalho.
- * Linhas PTv1 (sem sentido definido) são avaliadas nos dois sentidos.
+ * Programação dinâmica de trás para frente em cada sentido de cada linha:
+ * tail[i] = viagem de i até i+1 + min(descer em i+1, seguir viagem). Gera o valor de embarcar em i.
  */
-export function boardingStops(routes: ParsedRoute[], work: LatLng, p: TransitParams = DEFAULT_TRANSIT): BoardingStop[] {
-  const best = new Map<string, BoardingStop>();
+function propagate(routes: ParsedRoute[], exit: Exit, best: Map<string, BoardingStop>) {
   for (const r of routes) {
     const info = MODES[r.mode];
-    const walkLimit = info.rail ? p.railWalkAtWorkM : p.busWalkAtWorkM;
     const speedMpm = (info.speedKmh * 1000) / 60;
-    const directions = r.ptv2 ? [r.path] : [r.path, [...r.path].reverse()];
-    for (const path of directions) {
+    const dirs: { path: [number, number][]; noBoard?: boolean[] }[] = r.ptv2
+      ? [{ path: r.path, noBoard: r.alightOnly }]
+      : [
+          { path: r.path, noBoard: r.alightOnly },
+          { path: [...r.path].reverse(), noBoard: r.alightOnly && [...r.alightOnly].reverse() },
+        ];
+    for (const { path, noBoard } of dirs) {
       const pts = path.map(([lat, lng]) => ({ lat, lng }));
       const n = pts.length;
-      const walkWork = pts.map((s) => {
-        const d = distance(s, work);
-        return d <= walkLimit ? (d * p.walkDetour) / p.walkSpeedMpm : Infinity;
-      });
-      // tail[i] = melhor (viagem de i até j>i) + caminhada de j ao trabalho
+      const exits = pts.map((pt) => exit(pt, info.rail));
       const tail = new Array<number>(n).fill(Infinity);
+      const via = new Array<string | undefined>(n);
       for (let i = n - 2; i >= 0; i--) {
         const ride = (distance(pts[i]!, pts[i + 1]!) * info.detour) / speedMpm;
-        tail[i] = ride + Math.min(walkWork[i + 1]!, tail[i + 1]!);
+        const e = exits[i + 1];
+        if (e && e.cost <= tail[i + 1]!) {
+          tail[i] = ride + e.cost;
+          via[i] = e.via;
+        } else {
+          tail[i] = ride + tail[i + 1]!;
+          via[i] = via[i + 1];
+        }
       }
       for (let i = 0; i < n; i++) {
-        if (!Number.isFinite(tail[i]!)) continue;
+        if (!Number.isFinite(tail[i]!) || noBoard?.[i]) continue;
         const v = info.waitMin + tail[i]!;
         const s = pts[i]!;
         const key = `${s.lat.toFixed(5)},${s.lng.toFixed(5)}`;
         const cur = best.get(key);
-        if (!cur || v < cur.valueMin) best.set(key, { ...s, valueMin: v, routeId: r.id, label: routeLabel(r) });
+        const label = via[i] ? `${routeLabel(r)} + ${via[i]}` : routeLabel(r);
+        if (!cur || v < cur.valueMin) best.set(key, { ...s, valueMin: v, routeId: r.id, label });
       }
     }
   }
-  return [...best.values()];
+}
+
+/**
+ * Para cada parada de cada linha, o menor tempo de "embarcar aqui e chegar ao trabalho",
+ * descendo em uma parada posterior que esteja a uma caminhada do trabalho.
+ * Com `transfers`, também vale descer perto de outra linha que chegue lá (uma baldeação).
+ * Linhas PTv1 (sem sentido definido) são avaliadas nos dois sentidos.
+ */
+export function boardingStops(
+  routes: ParsedRoute[],
+  work: LatLng,
+  p: TransitParams = DEFAULT_TRANSIT,
+  opts: { transfers?: boolean } = {},
+): BoardingStop[] {
+  const walk = (m: number) => (m * p.walkDetour) / p.walkSpeedMpm;
+  const direct = new Map<string, BoardingStop>();
+  propagate(
+    routes,
+    (pt, rail) => {
+      const d = distance(pt, work);
+      return d <= (rail ? p.railWalkAtWorkM : p.busWalkAtWorkM) ? { cost: walk(d) } : null;
+    },
+    direct,
+  );
+  if (!opts.transfers || !direct.size) return [...direct.values()];
+
+  // Segunda passada: descer perto de um embarque direto e trocar de linha.
+  const idx = new PointIndex([...direct.values()], 500, work.lat);
+  const all = new Map(direct);
+  propagate(
+    routes,
+    (pt) => {
+      let bestT: { cost: number; via?: string } | null = null;
+      for (const { item, dist } of idx.within(pt, TRANSFER.maxWalkM)) {
+        const cost = walk(dist) + TRANSFER.slackMin + item.valueMin;
+        if (!bestT || cost < bestT.cost) bestT = { cost, via: item.label };
+      }
+      return bestT;
+    },
+    all,
+  );
+  return [...all.values()];
 }
 
 export interface Commute {

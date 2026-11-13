@@ -4,7 +4,7 @@ import { padBBox } from "../geo.js";
 import { BROWSER_UA, DAY, HOUR, cached, httpFetch } from "../http.js";
 import { geocodeInBox } from "../osm/nominatim.js";
 import { detectAmenities, firstInt, normalizeType, parseBRL, slugify } from "./normalize.js";
-import type { SourceAdapter } from "./types.js";
+import { SourceBlockedError, type SourceAdapter } from "./types.js";
 
 // VivaReal: página pública de busca por bairro. Os cards trazem preço, área, quartos e rua;
 // a coordenada vem de geocodificar "rua, bairro, cidade" no Nominatim.
@@ -71,8 +71,15 @@ export function parseVivaReal(html: string): VrCard[] {
   return out;
 }
 
+/** Depois de um bloqueio, espera antes de tentar de novo (não insiste a cada região). */
+const BLOCK_COOLDOWN_MS = 15 * 60_000;
+let blockedUntil = 0;
+
 async function getPage(url: string): Promise<{ status: number; html: string }> {
   return cached("vivareal", url, 6 * HOUR, async () => {
+    if (Date.now() < blockedUntil) {
+      throw new SourceBlockedError("o VivaReal bloqueou a leitura automática há pouco; tente de novo em alguns minutos");
+    }
     const res = await httpFetch(url, {
       minIntervalMs: 2000,
       retries: 1,
@@ -80,7 +87,8 @@ async function getPage(url: string): Promise<{ status: number; html: string }> {
     });
     // Bloqueio (403/429) não vai para o cache: é passageiro e não significa "bairro inexistente".
     if (res.status === 403 || res.status === 429) {
-      throw new Error(`o VivaReal bloqueou a leitura automática (HTTP ${res.status}); tente mais tarde`);
+      blockedUntil = Date.now() + BLOCK_COOLDOWN_MS;
+      throw new SourceBlockedError(`o VivaReal bloqueou a leitura automática (HTTP ${res.status}); tente mais tarde`);
     }
     return { status: res.status, html: res.ok ? await res.text() : "" };
   });

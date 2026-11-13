@@ -197,6 +197,19 @@ export function toBusLine(d: EmdecDirection, info?: { name?: string; company?: s
   };
 }
 
+/** Tira pontos quase colineares/próximos (o traçado vai para o navegador em toda análise). */
+export function simplify(line: [number, number][], minM = 15): [number, number][] {
+  if (line.length <= 2) return line;
+  const out: [number, number][] = [line[0]!];
+  for (let i = 1; i < line.length - 1; i++) {
+    const [lat, lng] = line[i]!;
+    const [plat, plng] = out[out.length - 1]!;
+    if (distance({ lat, lng }, { lat: plat, lng: plng }) >= minM) out.push(line[i]!);
+  }
+  out.push(line[line.length - 1]!);
+  return out;
+}
+
 // ---------- Rede (download com cache) ----------
 
 async function getText(url: string, init?: { method: string; body: URLSearchParams }): Promise<string> {
@@ -306,6 +319,8 @@ export const emdec: TransitOperator = {
         color: colorFor(d.ref),
         operator: "EMDEC",
         path: d.stops.map((s) => [s.lat, s.lng] as [number, number]),
+        alightOnly: d.stops.map((s) => s.use === "Desembarque"),
+        shape: d.segments.map(simplify),
         ptv2: true, // cada sentido é separado: não inverte
       }));
   },

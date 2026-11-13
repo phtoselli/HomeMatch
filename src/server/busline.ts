@@ -1,4 +1,4 @@
-import type { BBox, BusLine, TransitMode } from "../shared/types.js";
+import type { BBox, BusLine, LatLng, TransitMode } from "../shared/types.js";
 import { distance } from "./geo.js";
 import { DAY } from "./http.js";
 import { bboxQL, overpass, type OsmElement } from "./osm/overpass.js";
@@ -64,7 +64,7 @@ function mode(route: string | undefined): TransitMode {
 }
 
 /** Parse puro da resposta (relações com `out geom` + nós com tags). */
-export function parseBusLines(elements: OsmElement[], q?: BusQuery): BusLine[] {
+export function parseBusLines(elements: OsmElement[], q?: BusQuery, max = 8): BusLine[] {
   const nodeNames = new Map<number, string>();
   for (const e of elements) if (e.type === "node" && e.tags?.name) nodeNames.set(e.id, e.tags.name);
 
@@ -80,7 +80,7 @@ export function parseBusLines(elements: OsmElement[], q?: BusQuery): BusLine[] {
   rels.sort((a, b) => Number(!wanted.includes(a.tags?.ref?.toUpperCase() ?? "")) - Number(!wanted.includes(b.tags?.ref?.toUpperCase() ?? "")));
 
   const out: BusLine[] = [];
-  for (const r of rels.slice(0, 8)) {
+  for (const r of rels.slice(0, max)) {
     const t = r.tags ?? {};
     const segments: [number, number][][] = [];
     const stops: BusLine["stops"] = [];
@@ -131,4 +131,24 @@ export async function findBusLines(raw: string, bbox?: BBox): Promise<BusLine[]>
   if (q.kind !== "osm" && !bbox) throw new Error("Escolha a cidade antes (a busca pelo número da linha é feita dentro dela).");
   const res = await overpass(buildBusQuery(q, bbox), 3 * DAY);
   return parseBusLines(res.elements, q);
+}
+
+/** Linhas do OSM com parada a até `radiusM` do ponto (cidades sem operador cadastrado). */
+export function buildNearQuery(p: LatLng, radiusM: number): string {
+  const around = `around:${Math.round(radiusM)},${p.lat.toFixed(6)},${p.lng.toFixed(6)}`;
+  return (
+    `[out:json][timeout:120];(node(${around})["highway"="bus_stop"];node(${around})["public_transport"~"^(platform|stop_position)$"];)->.s;` +
+    `rel(bn.s)["type"="route"]["route"~"${ROUTE_RE}"]->.r;.r out geom;node(r.r)->.n;.n out body qt;`
+  );
+}
+
+export async function findBusLinesNear(p: LatLng, radiusM: number, maxLines: number): Promise<BusLine[]> {
+  const res = await overpass(buildNearQuery(p, radiusM), 3 * DAY);
+  // Cada sentido é uma relação: até 2 por linha.
+  const lines = parseBusLines(res.elements, undefined, maxLines * 2).map((l) => ({
+    ...l,
+    source: "osm",
+    nearWorkM: Math.round(Math.min(...l.stops.map((s) => distance(p, s)), Infinity)),
+  }));
+  return lines.sort((a, b) => (a.nearWorkM ?? Infinity) - (b.nearWorkM ?? Infinity));
 }

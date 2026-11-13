@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import { parseHTML } from "linkedom";
 import type { BBox, LatLng, Listing, ListingSource } from "../shared/types.js";
 import { padBBox } from "./geo.js";
@@ -186,18 +188,71 @@ function listingId(url: string, src: ListingSource): string {
   return `${src}:${createHash("sha1").update(u.host + u.pathname).digest("hex").slice(0, 12)}`;
 }
 
-/** Só http(s) e nada de rede local: o servidor vai baixar a URL. */
+/** Endereço IP de rede local, loopback, link-local, CGNAT, multicast ou não roteável. */
+export function isPrivateAddress(ip: string): boolean {
+  const h = ip.replace(/^\[|\]$/g, "").toLowerCase();
+  if (isIP(h) === 4) {
+    const [a, b] = h.split(".").map(Number) as [number, number];
+    return (
+      a === 0 || a === 10 || a === 127 || a >= 224 ||
+      (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) ||
+      (a === 100 && b >= 64 && b <= 127)
+    );
+  }
+  if (isIP(h) === 6) {
+    if (h === "::" || h === "::1") return true;
+    // IPv4 embutido no IPv6 (::ffff:127.0.0.1, que o URL normaliza para ::ffff:7f00:1)
+    const dotted = h.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    if (dotted) return isPrivateAddress(dotted[1]!);
+    const hex = h.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+    if (hex) {
+      const hi = parseInt(hex[1]!, 16);
+      const lo = parseInt(hex[2]!, 16);
+      return isPrivateAddress([hi >> 8, hi & 255, lo >> 8, lo & 255].join("."));
+    }
+    return /^(fc|fd|fe[89ab]|ff)/.test(h);
+  }
+  return false;
+}
+
+/** Só http(s) e nada de rede local (checagem do texto; o DNS é conferido ao baixar). */
 export function assertPublicUrl(raw: string): URL {
   const u = new URL(raw.trim());
   if (!/^https?:$/.test(u.protocol)) throw new Error("Use um link http(s)");
   const h = u.hostname.toLowerCase();
-  if (
-    h === "localhost" || h.endsWith(".local") || h.endsWith(".internal") || h === "[::1]" ||
-    /^(127\.|10\.|0\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h)
-  ) {
+  if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".internal") || isPrivateAddress(h)) {
     throw new Error("Link de rede local não é permitido");
   }
   return u;
+}
+
+/** O nome resolve para algum IP de rede local? (ex.: 127.0.0.1.nip.io) */
+async function assertPublicHost(u: URL): Promise<void> {
+  const host = u.hostname.replace(/^\[|\]$/g, "");
+  if (isIP(host)) return; // IP literal já foi conferido em assertPublicUrl
+  const addrs = await lookup(host, { all: true });
+  if (addrs.some((a) => isPrivateAddress(a.address))) throw new Error("Link de rede local não é permitido");
+}
+
+/**
+ * Baixa uma URL colada pelo usuário seguindo os redirecionamentos um a um e
+ * conferindo cada destino (texto e DNS), para nunca chegar à rede local.
+ */
+async function fetchPublic(raw: string, maxRedirects = 5): Promise<{ res: Response; finalUrl: string }> {
+  let url = assertPublicUrl(raw);
+  for (let hop = 0; ; hop++) {
+    await assertPublicHost(url);
+    const res = await httpFetch(url.toString(), {
+      minIntervalMs: 1500,
+      retries: 1,
+      redirect: "manual",
+      headers: { "User-Agent": BROWSER_UA, "Accept-Language": "pt-BR,pt;q=0.9", Accept: "text/html" },
+    });
+    const loc = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
+    if (!loc) return { res, finalUrl: url.toString() };
+    if (hop >= maxRedirects) throw new Error("redirecionamentos demais");
+    url = assertPublicUrl(new URL(loc, url).toString());
+  }
 }
 
 export async function resolveLink(rawUrl: string, cityBox?: BBox): Promise<Listing> {
@@ -207,14 +262,9 @@ export async function resolveLink(rawUrl: string, cityBox?: BBox): Promise<Listi
   let blocked: string | undefined;
   try {
     page = await cached("links", url, 12 * HOUR, async () => {
-      const res = await httpFetch(url, {
-        minIntervalMs: 1500,
-        retries: 1,
-        redirect: "follow",
-        headers: { "User-Agent": BROWSER_UA, "Accept-Language": "pt-BR,pt;q=0.9", Accept: "text/html" },
-      });
+      const { res, finalUrl } = await fetchPublic(url);
       if (!res.ok) throw new Error(`o site respondeu ${res.status}`);
-      return { finalUrl: res.url || url, html: await res.text() };
+      return { finalUrl, html: await res.text() };
     });
     info = extractListingInfo(page.html, page.finalUrl);
   } catch (e) {

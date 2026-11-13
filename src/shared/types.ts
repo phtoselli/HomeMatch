@@ -68,8 +68,10 @@ export interface TransitRoute {
   mode: TransitMode;
   color: string;
   operator?: string;
-  /** Paradas em ordem, [lat, lng]. Também usado para desenhar a linha. */
+  /** Paradas em ordem, [lat, lng]. Usado no cálculo e, sem `shape`, para desenhar a linha. */
   path: [number, number][];
+  /** Traçado pelas ruas (quando a fonte tem), só para desenhar. */
+  shape?: [number, number][][];
 }
 
 // ---------- Análise ----------
@@ -171,11 +173,25 @@ export interface Listing {
   amenities?: string[];
 }
 
+/** O imóvel que a pessoa procura. Vai para os sites que aceitam filtro e é reaplicado no servidor. */
+export interface ListingFilters {
+  types: PropertyType[];
+  priceMin: number | null;
+  priceMax: number | null;
+  /** Preço comparado: total (aluguel + condomínio + IPTU) ou só o aluguel. */
+  basis: "total" | "rent";
+  minBedrooms: number;
+  minBathrooms?: number;
+  minParking?: number;
+  minArea?: number;
+}
+
 export interface ListingsRequest {
   city: Pick<City, "name" | "stateCode" | "bbox">;
   regions: Pick<Region, "id" | "name" | "lat" | "lng" | "bbox">[];
   sources: SourceId[];
   maxPerRegion: number;
+  filters?: ListingFilters;
 }
 
 // ---------- Meus links ----------
