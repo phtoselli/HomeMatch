@@ -14,8 +14,24 @@ import type {
   StreamEvent,
 } from "../shared/types";
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** No `npm run dev` o Vite sobe antes da API: enquanto isso o proxy responde 500/502/503/504 sem corpo JSON. */
+async function fetchWhenUp(url: string, init?: RequestInit): Promise<Response> {
+  for (let i = 0; ; i++) {
+    const res = await fetch(url, init).catch(() => null);
+    const starting = !res || ([500, 502, 503, 504].includes(res.status) && !res.headers.get("content-type")?.includes("json"));
+    if (!starting || i >= 15) {
+      if (!res) throw new Error("Servidor da API fora do ar. Rode `npm run dev`.");
+      if (starting) throw new Error("A API não respondeu (ainda iniciando?). Tente de novo em alguns segundos.");
+      return res;
+    }
+    await sleep(1000);
+  }
+}
+
 async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+  const res = await fetchWhenUp(url);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error((body as { error?: string }).error ?? `Erro ${res.status}`);
@@ -48,7 +64,7 @@ export const api = {
 
 /** POST que recebe NDJSON: chama `on` a cada evento e resolve com o resultado final. */
 async function streamPost<T>(url: string, body: unknown, on: (ev: StreamEvent<T>) => void): Promise<T> {
-  const res = await fetch(url, {
+  const res = await fetchWhenUp(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
