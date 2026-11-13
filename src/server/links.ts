@@ -3,7 +3,7 @@ import { parseHTML } from "linkedom";
 import type { BBox, LatLng, Listing, ListingSource } from "../shared/types.js";
 import { padBBox } from "./geo.js";
 import { BROWSER_UA, HOUR, cached, httpFetch } from "./http.js";
-import { firstInt, normalizeType, parseBRL } from "./listings/normalize.js";
+import { detectAmenities, firstInt, normalizeType, parseBRL } from "./listings/normalize.js";
 import { geocodeInBox, searchAddress } from "./osm/nominatim.js";
 
 /**
@@ -23,6 +23,8 @@ export interface ExtractedInfo {
   image?: string;
   geo?: LatLng;
   address?: string;
+  /** Comodidades achadas na descrição; undefined quando a página não tem descrição. */
+  amenities?: string[];
 }
 
 type Json = Record<string, unknown>;
@@ -53,6 +55,7 @@ export function extractListingInfo(html: string, pageUrl: string): ExtractedInfo
     document.querySelector(`meta[property="${k}"], meta[name="${k}"]`)?.getAttribute("content")?.trim() || undefined;
   const info: ExtractedInfo = {};
   let breadcrumb: string[] = [];
+  const descriptions: string[] = [];
 
   for (const s of document.querySelectorAll('script[type="application/ld+json"]')) {
     let data: unknown;
@@ -68,6 +71,10 @@ export function extractListingInfo(html: string, pageUrl: string): ExtractedInfo
           .map((it) => String((it.item as Json | undefined)?.name ?? it.name ?? ""))
           .filter(Boolean);
         continue;
+      }
+      if (typeof o.description === "string") descriptions.push(o.description);
+      if (Array.isArray(o.amenityFeature)) {
+        for (const a of o.amenityFeature as Json[]) if (a && typeof a.name === "string" && a.value !== false) descriptions.push(a.name);
       }
       const g = o.geo as Json | undefined;
       if (!info.geo && g) info.geo = validGeo(num(g.latitude), num(g.longitude));
@@ -114,6 +121,8 @@ export function extractListingInfo(html: string, pageUrl: string): ExtractedInfo
   info.bedrooms ??= firstInt(text.match(/(\d+)\s*quartos?/i)?.[0] ?? pageUrl.match(/(\d+)-quartos?/i)?.[0]);
   info.area ??= firstInt(text.match(/(\d+)\s*m²/i)?.[0] ?? pageUrl.match(/(\d+)m2/i)?.[0]);
   info.parking ??= firstInt(text.match(/(\d+)\s*vagas?/i)?.[0]);
+  if (desc) descriptions.push(desc);
+  if (descriptions.length) info.amenities = detectAmenities(`${info.title ?? ""}\n${descriptions.join("\n")}`);
   info.image ??= meta("og:image");
   if (info.image) info.image = new URL(info.image, pageUrl).toString();
 
@@ -250,5 +259,6 @@ export async function resolveLink(rawUrl: string, cityBox?: BBox): Promise<Listi
     lng: pos.lng,
     approxLocation: approx,
     image: info.image,
+    amenities: info.amenities,
   };
 }

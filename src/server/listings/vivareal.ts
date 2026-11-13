@@ -3,7 +3,7 @@ import type { LatLng, Listing } from "../../shared/types.js";
 import { padBBox } from "../geo.js";
 import { BROWSER_UA, DAY, HOUR, cached, httpFetch } from "../http.js";
 import { geocodeInBox } from "../osm/nominatim.js";
-import { firstInt, normalizeType, parseBRL, slugify } from "./normalize.js";
+import { detectAmenities, firstInt, normalizeType, parseBRL, slugify } from "./normalize.js";
 import type { SourceAdapter } from "./types.js";
 
 // VivaReal: página pública de busca por bairro. Os cards trazem preço, área, quartos e rua;
@@ -28,6 +28,7 @@ export interface VrCard {
   street?: string;
   location?: string; // "Pinheiros, São Paulo"
   image?: string;
+  amenities?: string[];
 }
 
 const cy = (el: Element, name: string) => el.querySelector(`[data-cy="${name}"]`)?.textContent?.trim() ?? "";
@@ -47,6 +48,8 @@ export function parseVivaReal(html: string): VrCard[] {
     const title = (a?.getAttribute("title") ?? cy(card, "card-property-content")).replace(/\s+/g, " ").trim();
     const url = new URL(href, SITE);
     url.search = "";
+    // O card só tem título/resumo: o que achar ali vale, mas ausência não quer dizer "não tem".
+    const found = detectAmenities(`${title} ${cy(card, "card-property-content")}`);
     out.push({
       id,
       url: url.toString(),
@@ -62,6 +65,7 @@ export function parseVivaReal(html: string): VrCard[] {
       street: cy(card, "rp-cardProperty-street-txt") || undefined,
       location: cy(card, "rp-cardProperty-location-txt") || undefined,
       image: card.querySelector("img[src]")?.getAttribute("src") ?? undefined,
+      amenities: found.length ? found : undefined,
     });
   }
   return out;
@@ -159,6 +163,7 @@ export const vivaReal: SourceAdapter = {
         lng: p.lng,
         approxLocation: !pos,
         image: c.image,
+        amenities: c.amenities,
       });
     }
     return out;

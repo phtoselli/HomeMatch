@@ -1,5 +1,48 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { extractListingInfo } from "../../src/server/links.js";
 import { detectAmenities } from "../../src/server/listings/normalize.js";
+import { parseQuintoAndar, type QaResponse } from "../../src/server/listings/quintoandar.js";
+import { parseVivaReal } from "../../src/server/listings/vivareal.js";
+
+const fx = (f: string) => readFileSync(join(__dirname, "..", "fixtures", f), "utf8");
+
+describe("comodidades nos parsers (fixtures reais)", () => {
+  it("QuintoAndar lista: isFurnished vira 'mobiliado'; senão sem informação", () => {
+    const all = parseQuintoAndar(JSON.parse(fx("quintoandar-list.json")) as QaResponse);
+    expect(all.length).toBeGreaterThan(0);
+    for (const l of all) expect(l.amenities).toEqual(l.furnished ? ["mobiliado"] : undefined);
+  });
+
+  it("VivaReal busca: títulos sem comodidade não inventam nada", () => {
+    for (const c of parseVivaReal(fx("vivareal-search.html"))) {
+      expect(c.amenities === undefined || c.amenities.length > 0).toBe(true);
+    }
+  });
+
+  it("detalhe QuintoAndar: amenityFeature (armários) + descrição ('mobiliado')", () => {
+    const i = extractListingInfo(fx("quintoandar-detail.html"), "https://www.quintoandar.com.br/imovel/894444193/alugar");
+    expect(i.amenities).toEqual(["armario_cozinha", "armario_quarto", "mobiliado"]);
+  });
+
+  it("detalhe VivaReal: 'cozinha espaçosa' não conta como armário", () => {
+    const url = "https://www.vivareal.com.br/imovel/apartamento-2-quartos-pinheiros-zona-oeste-sao-paulo-com-garagem-82m2-aluguel-RS7000-id-2909698438/";
+    const i = extractListingInfo(fx("vivareal-detail.html"), url);
+    expect(Array.isArray(i.amenities)).toBe(true);
+    expect(i.amenities).not.toContain("armario_cozinha");
+    expect(i.amenities).not.toContain("armario_quarto");
+  });
+
+  it("detalhe com amenityFeature do schema.org", () => {
+    const html = `<script type="application/ld+json">${JSON.stringify({
+      "@type": "Apartment",
+      description: "Apartamento 2 dormitórios em Campinas.",
+      amenityFeature: [{ name: "Armário na cozinha", value: true }, { name: "Guarda-roupa", value: true }, { name: "Closet", value: false }],
+    })}</script>`;
+    expect(extractListingInfo(html, "https://exemplo.com.br/imovel/1").amenities).toEqual(["armario_cozinha", "armario_quarto"]);
+  });
+});
 
 describe("detectAmenities", () => {
   it("armário na cozinha", () => {
