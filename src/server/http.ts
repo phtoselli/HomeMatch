@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 /** Identificação honesta do app (política de uso do OSM/Nominatim pede um User-Agent próprio). */
-export const APP_UA = "mapa-aluguel/0.1 (ferramenta pessoal de busca de aluguel)";
+export const APP_UA = "HomeMatch/0.1 (ferramenta pessoal de busca de aluguel)";
 export const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
 

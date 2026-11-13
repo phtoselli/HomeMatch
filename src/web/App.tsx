@@ -75,7 +75,7 @@ export function App() {
     <div className={`app ${pickingWork ? "picking" : ""}`}>
       <aside className="sidebar">
         <header>
-          <h1>🏠 Mapa do Aluguel</h1>
+          <h1>🏠 HomeMatch</h1>
           <p>Ache a região certa e o imóvel certo, perto do trabalho e do que importa pra você.</p>
         </header>
 

@@ -1,4 +1,4 @@
-# Mapa do Aluguel
+# HomeMatch
 
 Aplicação local (mapa + servidor) para achar aluguel com base no **trabalho**, no **transporte
 público** e no que você quer ter **perto de casa**.
