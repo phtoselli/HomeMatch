@@ -1,0 +1,13 @@
+.close {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  flex: none;
+}
+.close:hover {
+  background: var(--subtle);
+  color: var(--ink);
+}

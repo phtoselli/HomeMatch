@@ -12,7 +12,7 @@ const bin = (p) => join(root, "node_modules", p);
 
 async function up() {
   try {
-    const r = await fetch(`http://127.0.0.1:${port}/api/features`);
+    const r = await fetch(`http://127.0.0.1:${port}/api/health`);
     return r.ok;
   } catch {
     return false;
@@ -21,9 +21,11 @@ async function up() {
 
 function openBrowser() {
   const [cmd, args] =
-    process.platform === "win32" ? ["cmd", ["/c", "start", "", url]]
-    : process.platform === "darwin" ? ["open", [url]]
-    : ["xdg-open", [url]];
+    process.platform === "win32"
+      ? ["cmd", ["/c", "start", "", url]]
+      : process.platform === "darwin"
+        ? ["open", [url]]
+        : ["xdg-open", [url]];
   spawn(cmd, args, { stdio: "ignore", detached: true }).unref();
   console.log(`\nHomeMatch aberto em ${url}\nPara fechar, feche esta janela (ou Ctrl+C).\n`);
 }
@@ -36,7 +38,10 @@ if (!existsSync(bin("vite/bin/vite.js")) || !existsSync(bin("tsx/dist/cli.mjs"))
 }
 
 console.log("Montando o mapa…");
-const build = spawnSync(process.execPath, [bin("vite/bin/vite.js"), "build", "--logLevel", "warn"], { cwd: root, stdio: "inherit" });
+const build = spawnSync(process.execPath, [bin("vite/bin/vite.js"), "build", "--logLevel", "warn"], {
+  cwd: join(root, "apps", "web"),
+  stdio: "inherit",
+});
 if (build.status !== 0) process.exit(build.status ?? 1);
 
 if (await up()) {
@@ -54,7 +59,7 @@ if (await up()) {
 }
 
 console.log("Subindo o servidor…");
-const server = spawn(process.execPath, [bin("tsx/dist/cli.mjs"), "src/server/index.ts"], {
+const server = spawn(process.execPath, [bin("tsx/dist/cli.mjs"), "apps/api/src/main.ts"], {
   cwd: root,
   stdio: ["ignore", "ignore", "inherit"], // log de cada requisição fica de fora; erros aparecem
   env: { ...process.env, API_PORT: String(port) },

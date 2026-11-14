@@ -41,22 +41,34 @@ Para usar no dia a dia: dois cliques em `HomeMatch.cmd` (Windows) ou `npm run ap
 Produção local, passo a passo: `npm run build && npm start` (o servidor entrega o mapa em http://localhost:3333).
 
 ```bash
-npm test           # Vitest (parsers com fixtures reais, modelo de trajeto, grade)
-npm run typecheck
+npm test           # Vitest (parsers com fixtures reais, modelo de trajeto, grade, rotas da API)
+npm run typecheck  # cada pacote com o próprio tsconfig
+npm run lint       # ESLint, incluindo quem pode importar quem
+npm run check      # tudo acima + build (o mesmo que o CI roda)
 ```
 
 ## Como funciona
 
+Monorepo com npm workspaces (arquitetura e próximos passos em [docs/arquitetura.md](docs/arquitetura.md)):
+
+| Pasta | O que é |
+|---|---|
+| `packages/contracts` | Schemas zod da API e os tipos derivados deles (uma fonte só para servidor e app) |
+| `packages/domain` | Regras puras: geo, modelo de trajeto, nota da grade, filtros, "o que não bate", horários |
+| `packages/sources` | Tudo que vem de fora: OSM, operador de ônibus, portais e imobiliárias, links colados |
+| `apps/api` | Fastify em camadas: `routes/`, `services/`, `plugins/`, `env.ts` |
+| `apps/web` | React + Leaflet por funcionalidade (`features/`), peças comuns em `shared/ui`, estado em stores (Zustand) |
+
 | Parte | Onde | Fonte |
 |---|---|---|
-| Cidades, endereços | `src/server/osm/nominatim.ts` | Nominatim (1 req/s) |
-| Linhas e paradas, lugares | `src/server/osm/overpass.ts`, `transit.ts`, `features.ts` | Overpass API |
-| Nota e ranking | `src/server/analysis.ts` | — |
-| Imóveis | `src/server/listings/*` (motor em `core/`, sites em `extensions/`) | portais + sites das imobiliárias (robots.txt respeitado) |
-| Imobiliárias da cidade | `src/server/listings/discovery.ts` | OSM `office=estate_agent` + site de cada uma |
-| Meus links | `src/server/links.ts` | página do anúncio |
-| Linha pelo número/link | `src/server/busline.ts` | Overpass (`out geom`) |
-| Mapa | `src/web/*` | React + Leaflet, tiles OSM |
+| Cidades, endereços | `packages/sources/src/osm/nominatim.ts` | Nominatim (1 req/s) |
+| Linhas e paradas, lugares | `packages/sources/src/osm/overpass.ts`, `transit.ts`, `features.ts` | Overpass API |
+| Nota e ranking | `packages/domain/src/analysis/grid.ts` (orquestrado em `apps/api/src/services/analysis.ts`) | — |
+| Imóveis | `packages/sources/src/listings/*` (motor em `core/`, sites em `extensions/`) | portais + sites das imobiliárias (robots.txt respeitado) |
+| Imobiliárias da cidade | `packages/sources/src/listings/discovery.ts` | OSM `office=estate_agent` + site de cada uma |
+| Meus links | `packages/sources/src/links.ts` | página do anúncio |
+| Linha pelo número/link | `packages/sources/src/busline.ts` | Overpass (`out geom`) |
+| Mapa | `apps/web/src/*` | React + Leaflet, tiles OSM |
 
 Tudo que vem de fora fica em cache em `data/cache/` (Overpass 7 dias, anúncios 6 h, geocodificação 30 dias).
 A primeira análise de uma cidade grande pode levar alguns minutos; as seguintes saem do cache.
@@ -67,20 +79,20 @@ A primeira análise de uma cidade grande pode levar alguns minutos; as seguintes
   (ônibus 15 km/h, metrô 32 km/h…) e espera média. Serve para comparar regiões, não substitui o app de rotas.
 - Depende do que está mapeado no OpenStreetMap (em SP e capitais as linhas estão bem mapeadas; em cidades menores, nem sempre).
 - "Mercado grande / atacarejo" é reconhecido pelo nome/marca (`BULK_MARKET_REGEX` em `features.ts`): ajuste para as redes da sua cidade.
-- Os sites de imóveis mudam o HTML/API sem aviso. Quando um raspador quebrar, atualize a fixture em `tests/fixtures/`
+- Os sites de imóveis mudam o HTML/API sem aviso. Quando um raspador quebrar, atualize a fixture em `packages/sources/test/fixtures/`
   e o parse correspondente. QuintoAndar só tem anúncios nas cidades onde opera.
 - Uso pessoal: o servidor respeita intervalos entre requisições e usa cache; não rode buscas em massa.
 
 ## Adicionando um site (extensão)
 
-O motor comum (`src/server/listings/core/engine.ts`) já cuida de robots.txt, ritmo, cache, bloqueio, paginação,
+O motor comum (`packages/sources/src/listings/core/engine.ts`) já cuida de robots.txt, ritmo, cache, bloqueio, paginação,
 total do mês, tipo, comodidades e posição no mapa. Uma extensão só diz o que é particular do site:
 
-1. Crie `src/server/listings/extensions/<site>.ts` exportando um `SiteExtension` (`core/types.ts`):
+1. Crie `packages/sources/src/listings/extensions/<site>.ts` exportando um `SiteExtension` (`core/types.ts`):
    `url(ctx)` da página de busca (por bairro, ou da cidade inteira com `scope: "city"`) e um `parse(html)` **puro**
    que devolve `RawListing[]`. Se o site publica schema.org, use `parseSchemaOrgListings` e pronto.
-2. Salve um recorte de uma página real em `tests/fixtures/` e teste o parse em `tests/listings/extensions.test.ts`.
-3. Registre em `src/server/listings/index.ts` (`extensionSource(...)`) e descreva em `portals.ts`.
+2. Salve um recorte de uma página real em `packages/sources/test/fixtures/` e teste o parse em `packages/sources/test/listings/extensions.test.ts`.
+3. Registre em `packages/sources/src/listings/index.ts` (`extensionSource(...)`) e descreva em `portals.ts`.
 
 Imobiliárias pequenas não precisam de código: se o site delas publica schema.org, a descoberta já as lê. Para uma
 **plataforma** de sites de imobiliária (Kenlo, Imoview…), uma extensão serve para todas as imobiliárias que a usam.
