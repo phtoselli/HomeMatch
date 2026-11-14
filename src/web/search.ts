@@ -1,8 +1,10 @@
-import { amenityRank, hasAmenity, type MapFilters } from "../shared/filters";
+import { amenityRank, hasAmenity, matchesFilters, type MapFilters } from "../shared/filters";
+import { PROPERTY_TYPE_LABEL } from "../shared/types";
 import type { Cell, Listing, ListingFilters, PropertyType } from "../shared/types";
+import { meters, money } from "./format";
 import type { IconName } from "./icons";
 
-export { amenityRank, applyFilters, hasAmenity } from "../shared/filters";
+export { amenityRank, hasAmenity } from "../shared/filters";
 
 /** Parâmetros da análise de regiões. */
 export interface Params {
@@ -58,6 +60,81 @@ export const searchFilters = (f: Filters): ListingFilters => ({
   minBedrooms: f.minBedrooms, minBathrooms: f.minBathrooms ?? 0, minParking: f.minParking ?? 0, minArea: f.minArea ?? 0,
 });
 
+/**
+ * Busca larga: o que vai para os sites passa um pouco do pedido (preço até +20% sobre o teto, um quarto
+ * a menos, qualquer tipo). Assim a tela nunca fica vazia por R$ 15: o que passa vira "quase lá", dizendo o quê.
+ */
+export const WIDE = { price: 0.2, bedrooms: 1 };
+
+export const wideFilters = (f: Filters): ListingFilters => ({
+  ...searchFilters(f),
+  types: [],
+  priceMax: f.priceMax ? Math.round(f.priceMax * (1 + WIDE.price)) : null,
+  minBedrooms: Math.max(0, f.minBedrooms - WIDE.bedrooms),
+});
+
+/** O que some de vez da lista: só o que passa da busca larga e os filtros finos (banheiros, vagas, área). */
+export function visibleListings<T extends Listing>(list: T[], f: Filters): T[] {
+  const wide = wideFilters(f);
+  const wanted = f.amenities ?? [];
+  return list.filter(
+    (l) => matchesFilters(l, wide) && !(f.hideUnknown && wanted.some((id) => hasAmenity(l, id) === undefined)),
+  );
+}
+
+export type MissKind = "price" | "rooms" | "type" | "commute" | "place" | "item";
+/** Uma coisa em que o imóvel não bate com o pedido, já em texto curto para o card. */
+export interface Miss {
+  kind: MissKind;
+  label: string;
+}
+
+/** O que a pessoa quer perto de casa (id, nome curto, raio em metros). */
+export interface NearWant {
+  id: string;
+  label: string;
+  radius: number;
+}
+
+/** Tudo em que o imóvel não bate com o pedido. Vazio = atende a tudo. */
+export function missesOf(l: Listing, cell: Cell | undefined, f: Filters, maxCommuteMin: number, near: NearWant[]): Miss[] {
+  const out: Miss[] = [];
+  const price = priceOf(l, f.basis);
+  if (f.priceMax && price > f.priceMax) out.push({ kind: "price", label: `${money(price - f.priceMax)} acima do teto` });
+  if (f.minBedrooms && (l.bedrooms ?? 0) < f.minBedrooms) {
+    const n = l.bedrooms ?? 0;
+    out.push({ kind: "rooms", label: n ? `${n} ${n === 1 ? "quarto" : "quartos"}` : "Sem quarto separado" });
+  }
+  if (f.types.length && !f.types.includes(l.type)) out.push({ kind: "type", label: PROPERTY_TYPE_LABEL[l.type] ?? l.typeLabel });
+  if (!cell) out.push({ kind: "commute", label: "Trajeto não calculado" });
+  else {
+    if (cell.commuteMin > maxCommuteMin) out.push({ kind: "commute", label: `${cell.commuteMin} min até o trabalho` });
+    for (const w of near) {
+      const d = cell.featureDist[w.id];
+      if (d == null) out.push({ kind: "place", label: `${w.label} longe` });
+      else if (d > w.radius) out.push({ kind: "place", label: `${w.label} a ${meters(d)}` });
+    }
+  }
+  for (const a of AMENITY_FILTERS) {
+    if (f.amenities?.includes(a.id) && hasAmenity(l, a.id) === false) out.push({ kind: "item", label: `Sem ${a.short.toLowerCase()}` });
+  }
+  return out;
+}
+
+/** O que pesa de verdade na decisão: preço, quartos e tempo até o trabalho. O resto (o que tem perto, tipo, itens) é desejo. */
+export const ESSENTIAL: MissKind[] = ["price", "rooms", "commute"];
+
+/**
+ * Grupo do imóvel na lista:
+ * 0 = atende a tudo; 1 = o essencial bate, falta algo de perto ou do imóvel;
+ * 2 = quase lá (uma coisa essencial passa um pouco); 3 = outras opções (duas ou mais).
+ */
+export function tierOf(misses: Miss[]): number {
+  if (!misses.length) return 0;
+  const essential = misses.filter((m) => ESSENTIAL.includes(m.kind)).length;
+  return essential === 0 ? 1 : essential === 1 ? 2 : 3;
+}
+
 export const SEARCH_TYPES: PropertyType[] = ["apartamento", "casa", "casa_condominio", "studio"];
 
 export const AMENITY_FILTERS: { id: string; label: string; short: string; icon: IconName }[] = [
@@ -93,13 +170,46 @@ export function matchScore(l: Listing, cell: Cell | undefined, f: Filters, maxCo
     : 1;
 
   const areaFit = cell ? clamp01(cell.score / 100) : 0.5;
-  return Math.round(100 * (0.35 * priceFit + 0.3 * commuteFit + 0.2 * amenFit + 0.15 * areaFit));
+  // Quarto a menos ou outro tipo: entram na lista (busca larga), mas pesam na nota.
+  const roomsFit = f.minBedrooms && (l.bedrooms ?? 0) < f.minBedrooms ? 0.8 : 1;
+  const typeFit = f.types.length && !f.types.includes(l.type) ? 0.9 : 1;
+  return Math.round(100 * (0.35 * priceFit + 0.3 * commuteFit + 0.2 * amenFit + 0.15 * areaFit) * roomsFit * typeFit);
 }
+
+/** Por que a busca voltou vazia: o que existe logo acima do teto e em outros tipos. */
+export interface Diagnosis {
+  ceiling: number | null;
+  /** Mesmo tipo e quartos, até ~60% acima do teto: quantos e o mais barato. */
+  sameCount: number;
+  cheapestSame?: number;
+  /** Qualquer tipo e número de quartos, dentro do teto. */
+  others: number;
+  othersCheapest?: number;
+}
+
+export function diagnose(same: Listing[], any: Listing[], f: Filters): Diagnosis {
+  const prices = (ls: Listing[]) => ls.map((l) => priceOf(l, f.basis)).filter((p) => p > 0);
+  const ceiling = f.priceMax ?? null;
+  const sp = prices(same);
+  const ap = prices(any).filter((p) => ceiling == null || p <= ceiling);
+  return {
+    ceiling,
+    sameCount: sp.length,
+    cheapestSame: sp.length ? Math.min(...sp) : undefined,
+    others: ap.length,
+    othersCheapest: ap.length ? Math.min(...ap) : undefined,
+  };
+}
+
+/** Folga (%) mínima para o teto alcançar um preço. */
+export const slackToReach = (budget: number, price: number) => Math.max(0, Math.ceil((price / budget - 1) * 100));
 
 export interface Ranked {
   l: Listing;
   cell?: Cell;
   match: number;
+  /** O que não bate com o pedido (vazio = atende a tudo). */
+  misses: Miss[];
 }
 
 export function sortRanked(list: Ranked[], f: Filters): Ranked[] {
@@ -110,6 +220,9 @@ export function sortRanked(list: Ranked[], f: Filters): Ranked[] {
     : f.sort === "area" ? -(x.l.area ?? 0)
     : f.sort === "price" ? priceOf(x.l, f.basis) || Infinity
     : -x.match;
-  // Pela nota, as comodidades já entram no cálculo; nas outras ordens, quem confirma tudo vem antes.
-  return [...list].sort((a, b) => (f.sort === "match" ? 0 : rank(a) - rank(b)) || key(a) - key(b));
+  // Quem atende a tudo vem antes, depois o "quase lá". Pela nota, as comodidades já entram no cálculo;
+  // nas outras ordens, quem confirma os itens vem antes.
+  return [...list].sort(
+    (a, b) => tierOf(a.misses) - tierOf(b.misses) || (f.sort === "match" ? 0 : rank(a) - rank(b)) || key(a) - key(b),
+  );
 }

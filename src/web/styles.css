@@ -442,3 +442,41 @@ details.more > .field + .field, details.more > .grid3 + .field { margin-top: 16p
 @media (max-width: 900px) { .preview { display: none; } }
 /* Textos de ajuda com trechos de código: fluem como parágrafo. */
 .step .hint { display: block; }
+.alert.diag { background: var(--surface); color: var(--ink-2); border: 1px solid #f3d38a; }
+.alert.diag b { color: var(--warn-ink); }
+
+/* ---------- Busca simples: uma tela, e resultados em "atende a tudo" / "quase lá" ---------- */
+.setup.quick { max-width: 880px; }
+.quick-card { padding: 32px; gap: 26px; }
+.quick-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.qgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 26px 28px; }
+.q { position: relative; padding-left: 38px; }
+.q.wide { grid-column: 1 / -1; }
+.qnum { position: absolute; left: 0; top: -2px; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-ink); font-weight: 700; font-size: 13px; }
+.q .label { font-size: 15.5px; }
+.city-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0; }
+.dist-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+.dist-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; font-size: 14px; }
+.dist-row span { flex: 1; min-width: 0; }
+.dist-row select { min-height: 34px; padding: 4px 6px; font-size: 13px; background: var(--surface); }
+@media (max-width: 700px) {
+  .qgrid { grid-template-columns: minmax(0, 1fr); }
+  .quick-card { padding: 20px 16px; }
+  .q { padding-left: 0; padding-top: 4px; }
+  .qnum { position: static; margin-bottom: -2px; }
+}
+
+.tier { display: flex; flex-direction: column; gap: 10px; }
+.tier + .tier { margin-top: 6px; }
+.tier-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.h3 { margin: 0; font-family: var(--display); font-size: 16px; display: flex; align-items: center; gap: 8px; }
+.tier-count { font-family: Inter, system-ui, sans-serif; font-size: 12px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--line); color: var(--ink-2); }
+.tier0 .tier-count { background: var(--accent); color: #fff; }
+.tier1 .tier-count { background: var(--accent-soft); color: var(--accent-ink); }
+.tier2 .tier-count { background: var(--warn-soft); color: var(--warn-ink); }
+.tier3 .lcard { opacity: 0.92; }
+.chip-mini.miss { background: var(--warn-soft); color: var(--warn-ink); font-weight: 600; }
+.rtag { margin-left: 6px; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 999px; background: var(--warn-soft); color: var(--warn-ink); }
+/* Com a busca ampliada podem ser 10+ regiões: uma linha só, rolando para o lado. */
+.results-head .pills { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; margin: 0 -16px; padding-left: 16px; padding-right: 16px; scrollbar-width: thin; }
+.results-head .pill { flex: none; white-space: nowrap; }

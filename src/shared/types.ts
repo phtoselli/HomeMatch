@@ -85,6 +85,11 @@ export interface AnalyzeRequest {
   cellSizeM: number;
   /** 0..1 — quanto o tempo de trajeto pesa na nota (o resto é proximidade das características). */
   commuteWeight: number;
+  /**
+   * Busca flexível: mantém também as áreas que passam um pouco do tempo (até +15 min) ou têm o lugar pedido
+   * um pouco mais longe (até 2× o raio), com nota menor e `misses` dizendo quantas coisas faltam.
+   */
+  flex?: boolean;
 }
 
 export interface Cell {
@@ -97,6 +102,8 @@ export interface Cell {
   featureDist: Record<string, number>; // metros até a característica mais próxima
   score: number; // 0..100
   region: string;
+  /** Busca flexível: quantas coisas a área não cumpre (tempo acima do pedido, lugar além do raio). 0 = tudo. */
+  misses?: number;
 }
 
 export interface Region {
@@ -112,6 +119,8 @@ export interface Region {
   cellCount: number;
   via: string[];
   featureDist: Record<string, number>;
+  /** Busca flexível: menor número de coisas que faltam entre as áreas da região (0 = alguma atende tudo). */
+  misses?: number;
 }
 
 export interface AnalysisResult {
@@ -125,6 +134,8 @@ export interface AnalysisResult {
     cellsTotal: number;
     cellsReachable: number;
     cellsMatching: number;
+    /** Busca flexível: áreas que ficaram de fora por pouco (entram como "quase lá"). */
+    cellsNear?: number;
     stopsUsable: number;
   };
   warnings: string[];

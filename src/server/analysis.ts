@@ -41,13 +41,23 @@ export interface GridInput {
   places: { lat: number; lng: number; name: string; rank: number }[];
   /** Modo reserva (poucas linhas no OSM): pontos de ônibus da cidade + distância do trabalho ao ponto mais próximo. */
   fallback?: { busStops: LatLng[]; workStopDistM: number };
+  /** Mantém também o que passa por pouco (ver AnalyzeRequest.flex). */
+  flex?: boolean;
 }
 
 export interface GridOutput {
   cells: Cell[];
   cellsTotal: number;
   cellsReachable: number;
+  /** Quantas das células mantidas atendem a tudo (sem flex, todas). */
+  cellsMatching: number;
 }
+
+/** Busca flexível: quanto além do pedido ainda entra como "quase lá". */
+export const FLEX = { extraMin: 15, radiusFactor: 2, maxMisses: 2, penalty: 0.7 };
+
+/** Tempo máximo que a análise considera (com a folga da busca flexível). */
+export const commuteLimit = (maxCommuteMin: number, flex?: boolean) => maxCommuteMin + (flex ? FLEX.extraMin : 0);
 
 /**
  * Parte pura da análise: percorre a grade, calcula o trajeto e a distância até cada
@@ -65,6 +75,10 @@ export function scoreGrid(input: GridInput): GridOutput {
   const centers = gridCenters(input.bbox, input.cellSizeM);
   const cells: Cell[] = [];
   let reachable = 0;
+  let matching = 0;
+  const flex = !!input.flex;
+  const limit = commuteLimit(input.maxCommuteMin, flex);
+  const reach = (r: number) => (flex ? r * FLEX.radiusFactor : r);
   for (const c of centers) {
     if (input.boundary && !inMultiPolygon(c, input.boundary)) continue;
     let commute = commuteFrom(c, work, stopIdx, input.maxWalkToStopM);
@@ -72,27 +86,27 @@ export function scoreGrid(input: GridInput): GridOutput {
       const g = genericBusCommute(c, work, fbIdx, input.maxWalkToStopM, input.fallback.workStopDistM);
       if (g && g.minutes < commute.minutes) commute = g;
     }
-    if (commute.minutes > input.maxCommuteMin) continue;
-    reachable++;
+    if (commute.minutes > limit) continue;
+    if (commute.minutes <= input.maxCommuteMin) reachable++;
 
+    // Sem flex, falta qualquer coisa = fora. Com flex, cada falta só pesa na nota (até FLEX.maxMisses).
+    let misses = commute.minutes > input.maxCommuteMin ? 1 : 0;
     const featureDist: Record<string, number> = {};
-    let ok = true;
     let amenity = 0;
     for (const f of features) {
-      const near = poiIdx[f.id]!.nearest(c, f.radius);
-      if (!near) {
-        ok = false;
-        break;
-      }
-      featureDist[f.id] = Math.round(near.dist);
-      amenity += 1 - near.dist / f.radius;
+      const near = poiIdx[f.id]!.nearest(c, reach(f.radius));
+      if (near) featureDist[f.id] = Math.round(near.dist);
+      if (near && near.dist <= f.radius) amenity += 1 - near.dist / f.radius;
+      else misses++;
+      if (!flex && misses) break;
     }
-    if (!ok) continue;
+    if (misses > (flex ? FLEX.maxMisses : 0)) continue;
+    if (!misses) matching++;
 
     const amenityScore = features.length ? amenity / features.length : 1;
-    const commuteScore = 1 - commute.minutes / input.maxCommuteMin;
+    const commuteScore = Math.max(0, 1 - commute.minutes / input.maxCommuteMin);
     const w = features.length ? input.commuteWeight : 1;
-    const score = 100 * (w * commuteScore + (1 - w) * amenityScore);
+    const score = 100 * (w * commuteScore + (1 - w) * amenityScore) * FLEX.penalty ** misses;
 
     // Nome do bairro: o place mais "importante" (suburb > quarter > neighbourhood) entre os mais próximos.
     const nearPlaces = placeIdx.within(c, 2500).sort((a, b) => a.dist - b.dist);
@@ -110,9 +124,10 @@ export function scoreGrid(input: GridInput): GridOutput {
       featureDist,
       score: Math.round(score * 10) / 10,
       region: place,
+      ...(flex ? { misses } : {}),
     });
   }
-  return { cells, cellsTotal: centers.length, cellsReachable: reachable };
+  return { cells, cellsTotal: centers.length, cellsReachable: reachable, cellsMatching: matching };
 }
 
 /** Agrupa as células por bairro e ordena (média das 3 melhores notas). */
@@ -147,9 +162,11 @@ export function rankRegions(cells: Cell[], cellSizeM: number): Region[] {
       cellCount: cs.length,
       via: [...via.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([v]) => v),
       featureDist,
+      ...(cs.some((c) => c.misses != null) ? { misses: Math.min(...cs.map((c) => c.misses ?? 0)) } : {}),
     });
   }
-  regions.sort((a, b) => b.score - a.score || a.commuteMin - b.commuteMin);
+  // Primeiro as regiões que atendem a tudo; depois as que chegam perto (busca flexível).
+  regions.sort((a, b) => (a.misses ?? 0) - (b.misses ?? 0) || b.score - a.score || a.commuteMin - b.commuteMin);
   return regions.map((r, i) => ({ ...r, rank: i + 1 }));
 }
 
@@ -172,7 +189,7 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
     warnings.push(m);
     emit({ type: "warning", message: m });
   };
-  const bbox = analysisBBox(req.city.bbox, req.work, req.maxCommuteMin);
+  const bbox = analysisBBox(req.city.bbox, req.work, commuteLimit(req.maxCommuteMin, req.flex));
 
   const op = operatorFor(req.city);
   let routes: ParsedRoute[] = [];
@@ -224,7 +241,7 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
   for (const f of req.features) {
     const def = featureById(f.id);
     emit({ type: "progress", message: `Mapeando ${def?.label.toLowerCase() ?? f.id} na cidade…` });
-    pois[f.id] = await fetchFeaturePois(f.id, padBBox(bbox, f.radius));
+    pois[f.id] = await fetchFeaturePois(f.id, padBBox(bbox, req.flex ? f.radius * FLEX.radiusFactor : f.radius));
     if (!pois[f.id]!.length) warn(`Nenhum(a) ${def?.label ?? f.id} encontrado(a) no OpenStreetMap nessa área.`);
   }
 
@@ -248,11 +265,16 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
     stops,
     places,
     fallback,
+    flex: req.flex,
   });
   const regions = rankRegions(grid.cells, req.cellSizeM);
   const cellRouteIds = new Set(grid.cells.map((c) => c.routeId).filter((id): id is string => !!id));
-  if (!grid.cells.length) {
-    warn("Nenhuma região atende a tudo. Tente aumentar o tempo máximo ou os raios das características.");
+  if (!grid.cellsMatching) {
+    warn(
+      grid.cells.length
+        ? "Nenhuma área atende a tudo; mostrando as que chegam perto (um pouco mais longe ou com algum lugar mais distante)."
+        : "Nenhuma região atende a tudo. Tente aumentar o tempo máximo ou os raios das características.",
+    );
   }
 
   // Envia ao mapa só os POIs dentro da área analisada (e as linhas usadas).
@@ -277,7 +299,8 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
     stats: {
       cellsTotal: grid.cellsTotal,
       cellsReachable: grid.cellsReachable,
-      cellsMatching: grid.cells.length,
+      cellsMatching: grid.cellsMatching,
+      cellsNear: grid.cells.length - grid.cellsMatching,
       stopsUsable: stops.length,
     },
     warnings,

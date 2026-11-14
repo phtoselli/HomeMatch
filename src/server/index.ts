@@ -29,6 +29,7 @@ const analyzeSchema = z.object({
   maxWalkToStopM: z.number().min(100).max(2000),
   cellSizeM: z.number().min(200).max(2000),
   commuteWeight: z.number().min(0).max(1),
+  flex: z.boolean().optional(),
 });
 
 const listingsSchema = z.object({

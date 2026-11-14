@@ -52,6 +52,27 @@ describe("scoreGrid", () => {
     expect(out.cellsReachable).toBeGreaterThan(out.cells.length);
   });
 
+  it("flex: mantém também o que passa por pouco, com nota menor e quantas coisas faltam", () => {
+    const pois = { parque: [{ id: "p1", feature: "parque", lat: -23.553, lng: -46.651 }] };
+    const input = { ...base, features: [{ id: "parque", radius: 800 }], pois };
+    const strict = scoreGrid(input);
+    const flex = scoreGrid({ ...input, flex: true });
+    expect(flex.cells.length).toBeGreaterThan(strict.cells.length);
+    expect(flex.cellsMatching).toBe(strict.cells.length);
+    const exact = flex.cells.filter((c) => c.misses === 0);
+    const near = flex.cells.filter((c) => (c.misses ?? 0) > 0);
+    expect(exact.length).toBe(strict.cells.length);
+    expect(near.length).toBeGreaterThan(0);
+    expect(Math.max(...near.map((c) => c.score))).toBeLessThan(100);
+    for (const c of near) {
+      expect(c.commuteMin).toBeLessThanOrEqual(40 + 15);
+      expect(c.misses).toBeLessThanOrEqual(2);
+    }
+    const regions = rankRegions(flex.cells, 500);
+    expect(regions[0]!.misses).toBe(0); // quem atende a tudo vem antes
+    expect(regions.some((r) => r.misses! > 0)).toBe(true);
+  });
+
   it("sem características, a nota é só o trajeto (mais perto = melhor)", () => {
     const out = scoreGrid({ ...base, features: [], pois: {} });
     const regions = rankRegions(out.cells, 500);

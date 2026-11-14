@@ -11,7 +11,7 @@ import { TopBar, type Mode } from "./components/TopBar";
 import { distM, makeCellLookup, meters, walkMin } from "./format";
 import { FEATURE_ICON, Icon } from "./icons";
 import { MapView, type Layers, type NumberedListing } from "./MapView";
-import { DEFAULT_FILTERS, applyFilters, matchScore, normalizeFilters, searchFilters, sortRanked, type Filters, type Ranked } from "./search";
+import { DEFAULT_FILTERS, matchScore, missesOf, normalizeFilters, sortRanked, visibleListings, wideFilters, type Filters, type NearWant, type Ranked } from "./search";
 import { usePersistent } from "./usePersistent";
 import { useSearch } from "./useSearch";
 
@@ -108,14 +108,21 @@ export function App() {
     };
   }, [search.analysis]);
   const maxMin = search.params.maxCommuteMin;
+  // O que precisa ficar perto, com o raio pedido (para dizer "mercado a 2,6 km" quando passa).
+  const nearWants: NearWant[] = useMemo(
+    () => features.filter((d) => d.id in search.chosen).map((d) => ({ id: d.id, label: d.label.split(" / ")[0]!, radius: search.chosen[d.id]! })),
+    [features, search.chosen],
+  );
   const rank = useCallback(
     (l: Listing): Ranked => {
       const cell = lookup?.(l);
-      return { l, cell, match: matchScore(l, cell, filters, maxMin) };
+      // Sem análise (só links colados) não dá para julgar trajeto nem o que tem perto.
+      const misses = lookup ? missesOf(l, cell, filters, maxMin, nearWants) : [];
+      return { l, cell, match: matchScore(l, cell, filters, maxMin), misses };
     },
-    [lookup, filters, maxMin],
+    [lookup, filters, maxMin, nearWants],
   );
-  const ranked = useMemo(() => sortRanked(applyFilters(search.listings, filters).map(rank), filters), [search.listings, filters, rank]);
+  const ranked = useMemo(() => sortRanked(visibleListings(search.listings, filters).map(rank), filters), [search.listings, filters, rank]);
   const inTab = useMemo(() => (regionTab === "all" ? ranked : ranked.filter((x) => x.l.region === regionTab)), [ranked, regionTab]);
   const mapListings = useMemo(() => inTab.map((x) => x.l), [inTab]);
   const myLinks: NumberedListing[] = useMemo(
@@ -131,7 +138,7 @@ export function App() {
   };
   const selected = findItem(selectedId);
   const detail = findItem(detailId);
-  const stale = search.searchedWith !== null && search.searchedWith !== JSON.stringify(searchFilters(filters));
+  const stale = search.searchedWith !== null && search.searchedWith !== JSON.stringify(wideFilters(filters));
 
   // A aba de região deixa de existir quando a busca muda.
   useEffect(() => {
@@ -217,7 +224,7 @@ export function App() {
         onEdit={openSetup}
       />
       {mode === "explore" && !setupOpen && (
-        <FilterBar filters={filters} setFilters={setFilters} features={features} chosen={search.chosen} onEdit={openSetup} />
+        <FilterBar filters={filters} setFilters={setFilters} features={features} chosen={search.chosen} maxCommuteMin={maxMin} onEdit={openSetup} />
       )}
 
       <div className="main">
@@ -241,6 +248,10 @@ export function App() {
               onRunListings={(regions) => city && search.runListings(city, regions, filters)}
               onTryLonger={() => runAll({ maxCommuteMin: 60 })}
               stale={stale}
+              onApplyFilters={(nf) => {
+                setFilters(nf);
+                if (city) void search.runListings(city, search.searchedRegions, nf);
+              }}
             />
           ) : (
             <div className="links-panel">
