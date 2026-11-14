@@ -35,7 +35,9 @@ npm install
 npm run dev        # API em :3333 + mapa em http://localhost:5173
 ```
 
-Produção local: `npm run build && npm start` (o servidor entrega o mapa em http://localhost:3333).
+Para usar no dia a dia: dois cliques em `HomeMatch.cmd` (Windows) ou `npm run app`. Monta o mapa, sobe o servidor e abre http://localhost:3333 no navegador; feche a janela para encerrar.
+
+Produção local, passo a passo: `npm run build && npm start` (o servidor entrega o mapa em http://localhost:3333).
 
 ```bash
 npm test           # Vitest (parsers com fixtures reais, modelo de trajeto, grade)
