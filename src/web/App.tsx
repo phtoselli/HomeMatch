@@ -3,6 +3,9 @@ import type { BBox, BusLine, Cell, City, FeatureDef, LatLng, LinkResult, Listing
 import { api } from "./api";
 import { FilterBar } from "./components/FilterBar";
 import { LinksPanel } from "./components/LinksPanel";
+import { LinePopover } from "./components/LinePopover";
+import { MapSettingsPanel } from "./components/MapSettingsPanel";
+import { TimetableModal } from "./components/TimetableModal";
 import { ListingDetail } from "./components/ListingDetail";
 import { PreviewCard } from "./components/PreviewCard";
 import { ResultsPanel } from "./components/ResultsPanel";
@@ -10,12 +13,12 @@ import { SetupWizard } from "./components/SetupWizard";
 import { TopBar, type Mode } from "./components/TopBar";
 import { distM, makeCellLookup, meters, walkMin } from "./format";
 import { FEATURE_ICON, Icon } from "./icons";
-import { MapView, type Layers, type NumberedListing } from "./MapView";
+import { summarizeLines } from "./lines";
+import { MapView, type LineHover, type NumberedListing } from "./MapView";
+import { greatThreshold, normalizeMapSettings, type MapSettings } from "./mapSettings";
 import { DEFAULT_FILTERS, matchScore, missesOf, normalizeFilters, sortRanked, visibleListings, wideFilters, type Filters, type NearWant, type Ranked } from "./search";
 import { usePersistent } from "./usePersistent";
 import { useSearch } from "./useSearch";
-
-const LAYER_LABEL: Record<keyof Layers, string> = { cells: "Nota das regiões", routes: "Linhas usadas", pois: "Lugares", listings: "Imóveis" };
 
 export function App() {
   const [mode, setMode] = usePersistent<Mode>("mode", "explore");
@@ -27,8 +30,25 @@ export function App() {
   const [setupStep, setSetupStep] = useState(0);
   const [pickingWork, setPickingWork] = useState(false);
   const [features, setFeatures] = useState<FeatureDef[]>([]);
-  const [layers, setLayers] = useState<Layers>({ routes: true, pois: true, cells: true, listings: true });
-  const [layersOpen, setLayersOpen] = useState(false);
+  const [rawMapSettings, setMapSettings] = usePersistent<MapSettings>("mapSettings", normalizeMapSettings(null));
+  const mapSettings = useMemo(() => normalizeMapSettings(rawMapSettings), [rawMapSettings]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  /** Linha sob o mouse (popover) e linha com a grade de horários aberta. */
+  const [lineHover, setLineHover] = useState<{ key: string; x: number; y: number; pinned: boolean } | null>(null);
+  const [timetableKey, setTimetableKey] = useState<string | null>(null);
+  // Favoritos: guarda o anúncio inteiro (a busca não fica salva, os favoritos sim).
+  const [favMap, setFavMap] = usePersistent<Record<string, Listing>>("favorites", {});
+  const [listMode, setListMode] = usePersistent<"all" | "fav">("listMode", "all");
+  const isFav = useCallback((id: string) => id in favMap, [favMap]);
+  const toggleFav = (l: Listing) =>
+    setFavMap((m) => {
+      const n = { ...m };
+      if (l.id in n) delete n[l.id];
+      else n[l.id] = l;
+      return n;
+    });
+  const closeTimer = useRef<number | undefined>(undefined);
+  const mapWrap = useRef<HTMLElement>(null);
   const [linkResults, setLinkResults] = usePersistent<LinkResult[]>("links", []);
   const [busLines, setBusLines] = useState<BusLine[]>([]);
   const [busQueries, setBusQueries] = usePersistent<string[]>("busLines", []);
@@ -126,14 +146,19 @@ export function App() {
   );
   const ranked = useMemo(() => sortRanked(visibleListings(search.listings, filters).map(rank), filters), [search.listings, filters, rank]);
   const inTab = useMemo(() => (regionTab === "all" ? ranked : ranked.filter((x) => x.l.region === regionTab)), [ranked, regionTab]);
-  const mapListings = useMemo(() => inTab.map((x) => x.l), [inTab]);
+  // Favoritos: o anúncio mais novo da busca (se veio de novo) ou o guardado.
+  const favorites = useMemo(() => {
+    const live = new Map(search.listings.map((l) => [l.id, l]));
+    return sortRanked(Object.values(favMap).map((l) => rank(live.get(l.id) ?? l)), filters);
+  }, [favMap, search.listings, rank, filters]);
+  const mapListings = useMemo(() => (listMode === "fav" ? favorites : inTab).map((x) => x.l), [listMode, favorites, inTab]);
   const myLinks: NumberedListing[] = useMemo(
     () => linkResults.filter((r) => r.listing).map((r) => ({ ...r.listing!, index: r.index })),
     [linkResults],
   );
   const findItem = (id: string | null): Ranked | null => {
     if (!id) return null;
-    const hit = ranked.find((x) => x.l.id === id);
+    const hit = ranked.find((x) => x.l.id === id) ?? favorites.find((x) => x.l.id === id);
     if (hit) return hit;
     const link = myLinks.find((x) => x.id === id);
     return link ? rank(link) : null;
@@ -205,7 +230,28 @@ export function App() {
   }
 
   const chosenDefs = features.filter((d) => d.id in search.chosen);
-  const lineRefs = [...new Map(busLines.map((l) => [l.ref ?? l.name, l.color])).entries()].slice(0, 3);
+  const lineRefs = mapSettings.myLines ? [...new Map(busLines.map((l) => [l.ref ?? l.name, l.color])).entries()].slice(0, 3) : [];
+  const greatFrom = useMemo(() => greatThreshold(search.analysis?.cells ?? []), [search.analysis]);
+  const lines = useMemo(() => summarizeLines(search.analysis?.routes ?? [], busLines), [search.analysis, busLines]);
+  const hoveredLine = lineHover ? lines.find((l) => l.key === lineHover.key) : undefined;
+  const timetableLine = timetableKey ? lines.find((l) => l.key === timetableKey) : undefined;
+
+  // O popover fica aberto enquanto o mouse está na linha ou nele (pequena folga para ir de um ao outro).
+  const scheduleClose = () => {
+    window.clearTimeout(closeTimer.current);
+    closeTimer.current = window.setTimeout(() => setLineHover((h) => (h?.pinned ? h : null)), 350);
+  };
+  const onLineHover: LineHover = useCallback((key, at, pin) => {
+    if (!key || !at) return scheduleClose();
+    window.clearTimeout(closeTimer.current);
+    setLineHover((h) => {
+      // Fixado numa linha: passar o mouse sobre outra não troca o popover.
+      if (h?.pinned && !pin && h.key !== key) return h;
+      return { key, x: at.x, y: at.y, pinned: !!pin || (!!h?.pinned && h.key === key) };
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const legendPois = mapSettings.pois ? chosenDefs.filter((d) => !mapSettings.hiddenPois.includes(d.id)) : [];
+  const cellsLegend = { great: ["ótima", "a melhor"], ok: ["ok", "boa"], both: ["ok", "ótima"] }[mapSettings.cellBand];
 
   return (
     <div className={`app ${pickingWork ? "picking" : ""}`}>
@@ -254,6 +300,11 @@ export function App() {
                 setFilters(nf);
                 if (city) void search.runListings(city, search.searchedRegions, nf);
               }}
+              listMode={listMode}
+              setListMode={setListMode}
+              favorites={favorites}
+              isFav={isFav}
+              onToggleFav={toggleFav}
             />
           ) : (
             <div className="links-panel">
@@ -276,7 +327,7 @@ export function App() {
           </p>
         </aside>
 
-        <main className="mapwrap">
+        <main className="mapwrap" ref={mapWrap}>
           <MapView
             city={city}
             work={work}
@@ -297,7 +348,8 @@ export function App() {
             focusListing={focus}
             selectedId={selectedId}
             onSelectListing={onSelectFromMap}
-            layers={layers}
+            settings={mapSettings}
+            onLineHover={onLineHover}
             fit={fit}
             onBoundsChange={setViewBBox}
           />
@@ -309,21 +361,21 @@ export function App() {
             </div>
           )}
 
-          {(search.analysis || busLines.length > 0 || work) && !pickingWork && (
+          {mapSettings.legend && (search.analysis || busLines.length > 0 || work) && !pickingWork && (
             <div className="legend" aria-label="Legenda">
               <b>Legenda</b>
               {work && <span><span className="lg-work"><Icon name="brief" size={11} /></span>Trabalho</span>}
-              {search.analysis && layers.cells && (
+              {search.analysis && mapSettings.cells && (
                 <span className="lg-col">
-                  <span>Nota da região</span>
-                  <span className="lg-bar" />
-                  <span className="lg-ends"><span>ok</span><span>ótima</span></span>
+                  <span>Nota da região{mapSettings.cellBand === "great" ? " (só as ótimas)" : mapSettings.cellBand === "ok" ? " (só as ok)" : ""}</span>
+                  <span className={`lg-bar ${mapSettings.cellBand}`} />
+                  <span className="lg-ends"><span>{cellsLegend[0]}</span><span>{cellsLegend[1]}</span></span>
                 </span>
               )}
               {lineRefs.map(([ref, color]) => (
                 <span key={ref}><span className="lg-line" style={{ background: color }} />Linha {ref}</span>
               ))}
-              {search.analysis && layers.pois && chosenDefs.map((d) => (
+              {search.analysis && legendPois.map((d) => (
                 <span key={d.id}>
                   <span className="lg-poi" style={{ background: d.color }}><Icon name={FEATURE_ICON[d.id] ?? "pin"} size={11} /></span>
                   {d.label.split(" / ")[0]}
@@ -334,23 +386,48 @@ export function App() {
           )}
 
           <div className="map-tools">
-            <button type="button" className="tool" aria-label="Camadas do mapa" aria-expanded={layersOpen} onClick={() => setLayersOpen(!layersOpen)}>
-              <Icon name="layers" size={18} />
+            <button type="button" className="tool" aria-label="Configurar o mapa" title="Configurar o mapa" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(!settingsOpen)}>
+              <Icon name="sliders" size={18} />
             </button>
-            {layersOpen && (
-              <div className="layers-pop">
-                {(Object.keys(LAYER_LABEL) as (keyof Layers)[]).map((k) => (
-                  <label key={k} className="check">
-                    <input type="checkbox" checked={layers[k]} onChange={() => setLayers({ ...layers, [k]: !layers[k] })} />
-                    {LAYER_LABEL[k]}
-                  </label>
-                ))}
-              </div>
+            {settingsOpen && (
+              <MapSettingsPanel
+                settings={mapSettings}
+                setSettings={setMapSettings}
+                features={chosenDefs}
+                greatFrom={greatFrom}
+                hasAnalysis={!!search.analysis}
+                myLinesCount={new Set(busLines.map((l) => l.ref ?? l.id)).size}
+                myLinksCount={myLinks.length}
+                lines={lines}
+                onClose={() => setSettingsOpen(false)}
+              />
             )}
           </div>
 
+          {hoveredLine && lineHover && !pickingWork && (
+            <LinePopover
+              line={hoveredLine}
+              x={lineHover.x}
+              y={lineHover.y}
+              width={mapWrap.current?.clientWidth ?? 800}
+              height={mapWrap.current?.clientHeight ?? 600}
+              pinned={lineHover.pinned}
+              onEnter={() => window.clearTimeout(closeTimer.current)}
+              onLeave={scheduleClose}
+              onClose={() => setLineHover(null)}
+              onHide={() => {
+                setMapSettings({ ...mapSettings, hiddenLines: [...new Set([...mapSettings.hiddenLines, hoveredLine.key])] });
+                setLineHover(null);
+              }}
+              onTimetable={() => {
+                setTimetableKey(hoveredLine.key);
+                setLineHover(null);
+              }}
+            />
+          )}
+
           {selected && !detail && !pickingWork && (
-            <PreviewCard item={selected} filters={filters} busLines={busLines} onOpen={() => setDetailId(selected.l.id)} onClose={() => setSelectedId(null)} />
+            <PreviewCard item={selected} filters={filters} busLines={busLines} onOpen={() => setDetailId(selected.l.id)} onClose={() => setSelectedId(null)} fav={isFav(selected.l.id)} onToggleFav={() => toggleFav(selected.l)} />
           )}
         </main>
 
@@ -378,6 +455,8 @@ export function App() {
         )}
       </div>
 
+      {timetableLine && <TimetableModal line={timetableLine} onClose={() => setTimetableKey(null)} />}
+
       {detail && (
         <ListingDetail
           item={detail}
@@ -388,6 +467,8 @@ export function App() {
           busLines={busLines}
           work={work}
           onClose={() => setDetailId(null)}
+          fav={isFav(detail.l.id)}
+          onToggleFav={() => toggleFav(detail.l)}
         />
       )}
     </div>

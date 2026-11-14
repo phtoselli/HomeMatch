@@ -195,6 +195,17 @@ app.get("/api/bus", async (req) => {
   return findBusLines(q.q, box);
 });
 
+/** Grade de horários de uma linha do operador ("emdec:353" ou "emdec:353:1"). */
+app.get("/api/bus/timetable", async (req, reply) => {
+  const { id } = z.object({ id: z.string().regex(/^[a-z]+:[\w.-]+(:\d+)?$/i) }).parse(req.query);
+  const [opId, ref] = id.split(":");
+  const op = operatorById(opId!);
+  if (!op?.timetable) return reply.code(404).send({ error: "Essa linha não tem grade de horários publicada pelo operador." });
+  const t = await op.timetable(ref!);
+  if (!t) return reply.code(404).send({ error: `Linha ${ref} não encontrada no site do operador.` });
+  return t;
+});
+
 /** Linhas que passam perto de um ponto (o trabalho). */
 app.get("/api/bus/near", async (req) => {
   const q = z

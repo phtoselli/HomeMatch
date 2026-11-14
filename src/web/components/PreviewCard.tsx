@@ -22,10 +22,12 @@ interface Props {
   busLines: BusLine[];
   onOpen: () => void;
   onClose: () => void;
+  fav: boolean;
+  onToggleFav: () => void;
 }
 
 /** Cartão do imóvel selecionado, por cima do mapa. */
-export function PreviewCard({ item: { l, cell, match }, filters, busLines, onOpen, onClose }: Props) {
+export function PreviewCard({ item: { l, cell, match }, filters, busLines, onOpen, onClose, fav, onToggleFav }: Props) {
   const price = priceOf(l, filters.basis);
   const over = overBudget(l, filters);
   const stop = bestStop(l, busLines, cell?.via);
@@ -55,6 +57,9 @@ export function PreviewCard({ item: { l, cell, match }, filters, busLines, onOpe
         </div>
         <div className="row">
           <button type="button" className="btn primary grow" onClick={onOpen}>Ver detalhes</button>
+          <button type="button" className="btn fav-inline" aria-pressed={fav} aria-label={fav ? "Tirar dos favoritos" : "Favoritar"} title={fav ? "Tirar dos favoritos" : "Favoritar"} onClick={onToggleFav}>
+            <Icon name="heart" size={16} />
+          </button>
           <a className="btn" href={l.url} target="_blank" rel="noopener">
             {sourceName(l, "Anúncio")} <Icon name="ext" size={15} />
           </a>

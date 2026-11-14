@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { emdec, normalizeRef, parseEmdecDetail, parseEmdecNetwork, parseEmdecSearch, toBusLine } from "../src/server/operators/emdec.js";
+import { emdec, normalizeRef, parseEmdecDetail, parseEmdecNetwork, parseEmdecSearch, parseEmdecTimetable, toBusLine } from "../src/server/operators/emdec.js";
 import { operatorFor } from "../src/server/operators/index.js";
 import { boardingStops } from "../src/server/transit.js";
 
@@ -50,5 +50,30 @@ describe("EMDEC (Campinas)", () => {
     expect(operatorFor({ osmId: "R298319", name: "Valinhos", stateCode: "SP" })).toBeUndefined();
     expect(normalizeRef("126,1")).toBe("126.1");
     expect(normalizeRef("Linha 353")).toBe("353");
+  });
+});
+
+describe("EMDEC: grade de horários", () => {
+  const html = readFileSync(join(__dirname, "fixtures", "emdec-detail-353.html"), "utf8");
+  const t = parseEmdecTimetable(html, "353");
+
+  it("um bloco por sentido, com ponto de partida e letreiro", () => {
+    expect(t.directions.map((d) => d.direction)).toEqual([1, 2]);
+    expect(t.directions[0]).toMatchObject({ from: "ESTR MUN DO TANQUINHO", to: "EST. EXPEDICIONÁRIOS" });
+  });
+
+  it("dias úteis, sábados e domingos com os horários em ordem", () => {
+    const d1 = t.directions[0]!;
+    expect(d1.days.map((d) => d.label)).toEqual(["Dias úteis", "Sábados", "Domingos/Feriados"]);
+    expect(d1.days[0]!.times.slice(0, 3)).toEqual(["04:51", "05:12", "05:33"]);
+    const all = t.directions.flatMap((d) => d.days.flatMap((x) => x.times));
+    expect(all.length).toBe(307); // todos os horários da página
+    expect(all.every((x) => /^\d{1,2}:\d{2}/.test(x))).toBe(true);
+  });
+
+  it("observação e data de atualização", () => {
+    expect(t.note).toMatch(/^Esta linha opera com retorno reservado/);
+    expect(t.updated).toBe("12/11/2026, às 02h27");
+    expect(t.operator).toMatch(/^EMDEC/);
   });
 });

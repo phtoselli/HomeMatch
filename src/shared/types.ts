@@ -271,6 +271,27 @@ export interface BusLine {
   nearWorkM?: number;
 }
 
+/** Grade de horários de partida de uma linha (por sentido e tipo de dia). */
+export interface LineTimetable {
+  ref: string;
+  name?: string;
+  operator?: string;
+  directions: {
+    direction: number;
+    /** Ponto de partida e letreiro (destino). */
+    from?: string;
+    to?: string;
+    /** "Dias úteis", "Sábados", "Domingos/Feriados" → ["04:51", "05:12", …] (com marcas como "R" quando houver). */
+    days: { label: string; times: string[] }[];
+  }[];
+  /** Observação do operador sobre a linha. */
+  note?: string;
+  /** Quando o operador atualizou a grade ("12/11/2026, às 02h27"). */
+  updated?: string;
+  /** Página oficial da linha. */
+  source?: string;
+}
+
 /** Empresa/órgão que publica as linhas de ônibus de uma cidade. */
 export interface TransitOperatorInfo {
   id: string;

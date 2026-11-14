@@ -29,6 +29,13 @@ interface Props {
   stale: boolean;
   /** Troca os filtros e busca os imóveis de novo nas mesmas regiões. */
   onApplyFilters: (f: Filters) => void;
+  /** Todos os imóveis da busca ou só os favoritos. */
+  listMode: "all" | "fav";
+  setListMode: (m: "all" | "fav") => void;
+  /** Favoritos (guardados no navegador), já com nota e o que não bate. */
+  favorites: Ranked[];
+  isFav: (id: string) => boolean;
+  onToggleFav: (l: Ranked["l"]) => void;
 }
 
 /** Tela estreita: sem prévia sobre o mapa, o toque no card já abre o detalhe. */
@@ -74,9 +81,10 @@ export function ResultsPanel(p: Props) {
   function renderCard({ l, cell, match, misses }: Ranked) {
     const over = overBudget(l, f);
     const price = priceOf(l, f.basis);
+    const fav = p.isFav(l.id);
     return (
+      <div key={l.id} className="lcard-wrap">
       <button
-        key={l.id}
         ref={(el) => { if (el) cardRefs.current.set(l.id, el); else cardRefs.current.delete(l.id); }}
         type="button"
         className="lcard"
@@ -109,12 +117,75 @@ export function ResultsPanel(p: Props) {
           </span>
         </span>
       </button>
+      <button
+        type="button"
+        className="fav-btn"
+        aria-pressed={fav}
+        aria-label={fav ? "Tirar dos favoritos" : "Favoritar"}
+        title={fav ? "Tirar dos favoritos" : "Favoritar"}
+        onClick={() => p.onToggleFav(l)}
+      >
+        <Icon name="heart" size={18} />
+      </button>
+      </div>
+    );
+  }
+
+  const switcher = (a || p.favorites.length > 0) && (
+    <div className="seg list-mode" role="group" aria-label="Mostrar">
+      <button type="button" aria-pressed={p.listMode === "all"} onClick={() => p.setListMode("all")}>
+        Todos{a ? <span className="seg-count">{p.ranked.length}</span> : null}
+      </button>
+      <button type="button" aria-pressed={p.listMode === "fav"} onClick={() => p.setListMode("fav")}>
+        <Icon name="heart" size={14} /> Favoritos<span className="seg-count">{p.favorites.length}</span>
+      </button>
+    </div>
+  );
+
+  if (p.listMode === "fav") {
+    return (
+      <div className="results">
+        <div className="results-head">
+          {switcher}
+          <div>
+            <h1 className="title">Seus favoritos</h1>
+            <p className="sub">
+              {p.favorites.length
+                ? `${p.favorites.length} ${p.favorites.length === 1 ? "imóvel guardado" : "imóveis guardados"} neste navegador. Ficam aqui mesmo depois de uma nova busca.`
+                : "Guarde aqui os imóveis que chamaram atenção para comparar com calma."}
+            </p>
+          </div>
+          {p.favorites.length > 1 && (
+            <div className="row between">
+              <span className="hint">Ordenar por</span>
+              <div className="seg small" role="group" aria-label="Ordenar">
+                {SORTS.map(([k, label]) => (
+                  <button key={k} type="button" aria-pressed={f.sort === k} onClick={() => p.setFilters({ ...f, sort: k })}>{label}</button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="results-body">
+          {p.favorites.length ? (
+            <div className="cards">{p.favorites.map(renderCard)}</div>
+          ) : (
+            <div className="fav-empty">
+              <span className="fav-empty-icon"><Icon name="heart" size={28} /></span>
+              <b>Nenhum imóvel favoritado ainda</b>
+              <span>Toque no coração de um imóvel da lista, do mapa ou dos detalhes para guardá-lo aqui.</span>
+              <button type="button" className="btn primary" onClick={() => p.setListMode("all")}>Ver todos os imóveis</button>
+            </div>
+          )}
+        </div>
+      </div>
     );
   }
 
   return (
     <div className="results">
       <div className="results-head">
+        {switcher}
         {s.busy && (
           <div className="progress" role="status">
             <span className="spinner" />

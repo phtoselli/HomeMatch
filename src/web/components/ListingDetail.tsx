@@ -18,6 +18,8 @@ interface Props {
   busLines: BusLine[];
   work: LatLng | null;
   onClose: () => void;
+  fav: boolean;
+  onToggleFav: () => void;
 }
 
 type Status = "yes" | "warn" | "no" | "unk";
@@ -29,7 +31,7 @@ const STATUS: Record<Status, { icon: IconName; tag: string }> = {
 };
 
 /** Detalhe do imóvel: como ele atende o que a pessoa pediu, preço x alvo, trajeto e o que tem perto. */
-export function ListingDetail({ item: { l, cell, match }, filters: f, maxCommuteMin, features, chosen, busLines, work, onClose }: Props) {
+export function ListingDetail({ item: { l, cell, match }, filters: f, maxCommuteMin, features, chosen, busLines, work, onClose, fav, onToggleFav }: Props) {
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     closeRef.current?.focus();
@@ -113,9 +115,14 @@ export function ListingDetail({ item: { l, cell, match }, filters: f, maxCommute
           <button ref={closeRef} type="button" className="btn ghost" onClick={onClose}>
             <Icon name="back" /> Voltar ao mapa
           </button>
-          <a className="btn" href={l.url} target="_blank" rel="noopener">
-            Abrir no {sourceName(l)} <Icon name="ext" size={15} />
-          </a>
+          <span className="row">
+            <button type="button" className="btn fav-inline" aria-pressed={fav} onClick={onToggleFav}>
+              <Icon name="heart" size={16} /> {fav ? "Favoritado" : "Favoritar"}
+            </button>
+            <a className="btn" href={l.url} target="_blank" rel="noopener">
+              Abrir no {sourceName(l)} <Icon name="ext" size={15} />
+            </a>
+          </span>
         </header>
 
         <div className="detail-content">

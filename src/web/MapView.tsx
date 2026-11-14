@@ -4,12 +4,28 @@ import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import type { AnalysisResult, BBox, BusLine, City, FeatureDef, LatLng, Listing, Region } from "../shared/types";
 import { makeCellLookup, meters, moneyShort, scoreColor } from "./format";
 import { FEATURE_ICON, iconSvg } from "./icons";
+import { lineKey } from "./lines";
+import { greatThreshold, showCell, type MapSettings } from "./mapSettings";
 
-export interface Layers {
-  routes: boolean;
-  pois: boolean;
-  cells: boolean;
-  listings: boolean;
+/** Mouse sobre uma linha (ponto na tela do mapa); clique fixa o popover. key null = saiu da linha. */
+export type LineHover = (key: string | null, at?: { x: number; y: number }, pin?: boolean) => void;
+
+/** Destaca a linha sob o mouse (mais grossa e por cima das outras) e avisa quem mostra o popover. */
+function hoverable(pl: L.Polyline, key: string, weight: number, onHover?: LineHover) {
+  pl.on("mouseover", (e: L.LeafletMouseEvent) => {
+    pl.setStyle({ weight: weight + 3, opacity: 1 });
+    pl.bringToFront();
+    onHover?.(key, e.containerPoint);
+  });
+  pl.on("mouseout", () => {
+    pl.setStyle({ weight, opacity: pl.options.opacity === 1 ? 0.85 : pl.options.opacity });
+    onHover?.(null);
+  });
+  pl.on("click", (e: L.LeafletMouseEvent) => {
+    L.DomEvent.stopPropagation(e);
+    onHover?.(key, e.containerPoint, true);
+  });
+  return pl;
 }
 
 export type NumberedListing = Listing & { index: number };
@@ -27,13 +43,14 @@ interface Props {
   myLinks: NumberedListing[];
   busLines: BusLine[];
   focusListing: string | null;
-  layers: Layers;
+  settings: MapSettings;
   fit: { bbox: BBox; key: number } | null;
   onBoundsChange?: (b: BBox) => void;
   /** Imóvel selecionado (pin escuro + prévia). */
   selectedId: string | null;
   /** Clique num pin: seleciona o imóvel. */
   onSelectListing: (l: Listing) => void;
+  onLineHover?: LineHover;
 }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -83,7 +100,7 @@ function useLayer(build: (group: L.LayerGroup) => void, deps: unknown[], visible
   }, [map, visible, ...deps]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
-function Boundary({ city }: { city: City | null }) {
+function Boundary({ city, visible }: { city: City | null; visible: boolean }) {
   useLayer(
     (g) => {
       if (!city?.boundary) return;
@@ -91,6 +108,7 @@ function Boundary({ city }: { city: City | null }) {
       L.polygon(latlngs, { color: "#495057", weight: 1.5, dashArray: "6 6", fill: false, interactive: false }).addTo(g);
     },
     [city],
+    visible,
   );
   return null;
 }
@@ -107,16 +125,18 @@ function WorkMarker({ work }: { work: LatLng | null }) {
   return null;
 }
 
-function Routes({ analysis, visible }: { analysis: AnalysisResult | null; visible: boolean }) {
+function Routes({ analysis, hidden, onHover, visible }: { analysis: AnalysisResult | null; hidden: string[]; onHover?: LineHover; visible: boolean }) {
   useLayer(
     (g) => {
+      // Tolerância maior: linhas finas sobrepostas ficam fáceis de pegar com o mouse.
+      const renderer = L.canvas({ padding: 0.3, tolerance: 6 });
       for (const r of analysis?.routes ?? []) {
-        L.polyline(r.shape ?? r.path, { color: r.color, weight: r.mode === "bus" || r.mode === "trolleybus" ? 2.5 : 4.5, opacity: 0.75 })
-          .bindTooltip(`<b>${esc(r.ref ?? "")}</b> ${esc(r.name)}${r.operator ? `<br><small>${esc(r.operator)}</small>` : ""}`, { sticky: true })
-          .addTo(g);
+        if (hidden.includes(lineKey(r))) continue;
+        const weight = r.mode === "bus" || r.mode === "trolleybus" ? 2.5 : 4.5;
+        hoverable(L.polyline(r.shape ?? r.path, { renderer, color: r.color, weight, opacity: 0.75 }), lineKey(r), weight, onHover).addTo(g);
       }
     },
-    [analysis],
+    [analysis, hidden],
     visible,
   );
   return null;
@@ -128,7 +148,7 @@ const PIN_ZOOM = 14;
 const MAX_PINS = 300;
 
 /** Pin com o ícone da característica (mercado, parque, academia…) para cada lugar ativo. */
-function Pois({ analysis, features, visible }: { analysis: AnalysisResult | null; features: FeatureDef[]; visible: boolean }) {
+function Pois({ analysis, features, hidden, visible }: { analysis: AnalysisResult | null; features: FeatureDef[]; hidden: string[]; visible: boolean }) {
   const icons = useMemo(() => {
     const m = new Map<string, L.DivIcon>();
     for (const f of features) {
@@ -150,7 +170,8 @@ function Pois({ analysis, features, visible }: { analysis: AnalysisResult | null
   const map = useMap();
   const [view, setView] = useState(() => ({ zoom: map.getZoom(), bounds: map.getBounds() }));
   useMapEvents({ moveend: () => setView({ zoom: map.getZoom(), bounds: map.getBounds() }) });
-  const total = useMemo(() => Object.values(analysis?.pois ?? {}).reduce((n, l) => n + l.length, 0), [analysis]);
+  const shown = useMemo(() => Object.entries(analysis?.pois ?? {}).filter(([fid]) => !hidden.includes(fid)), [analysis, hidden]);
+  const total = useMemo(() => shown.reduce((n, [, l]) => n + l.length, 0), [shown]);
   // Poucos lugares: sempre pin. Muitos: pin só de perto (e só na área visível).
   const few = total <= MAX_PINS;
   const close = few || view.zoom >= PIN_ZOOM;
@@ -158,7 +179,7 @@ function Pois({ analysis, features, visible }: { analysis: AnalysisResult | null
     (g) => {
       const renderer = L.canvas({ padding: 0.3 });
       const area = view.bounds.pad(0.3);
-      for (const [fid, list] of Object.entries(analysis?.pois ?? {})) {
+      for (const [fid, list] of shown) {
         const def = features.find((f) => f.id === fid);
         const icon = icons.get(fid);
         for (const p of list) {
@@ -174,19 +195,21 @@ function Pois({ analysis, features, visible }: { analysis: AnalysisResult | null
       }
     },
     // De longe não precisa refazer a cada arrasto; de perto, refaz para a área visível.
-    [analysis, icons, close, !few && close ? view.bounds.toBBoxString() : ""],
+    [shown, icons, close, !few && close ? view.bounds.toBBoxString() : ""],
     visible,
   );
   return null;
 }
 
-function Cells({ analysis, features, visible }: { analysis: AnalysisResult | null; features: FeatureDef[]; visible: boolean }) {
+function Cells({ analysis, features, band, visible }: { analysis: AnalysisResult | null; features: FeatureDef[]; band: MapSettings["cellBand"]; visible: boolean }) {
+  const threshold = useMemo(() => greatThreshold(analysis?.cells ?? []), [analysis]);
   useLayer(
     (g) => {
       if (!analysis) return;
       const renderer = L.canvas({ padding: 0.3 });
       const half = analysis.cellSizeM / 2;
       for (const c of analysis.cells) {
+        if (!showCell(c, band, threshold)) continue;
         const dLat = half / 111_320;
         const dLng = half / (111_320 * Math.cos((c.lat * Math.PI) / 180));
         const feats = Object.entries(c.featureDist)
@@ -206,13 +229,13 @@ function Cells({ analysis, features, visible }: { analysis: AnalysisResult | nul
           .addTo(g);
       }
     },
-    [analysis, features],
+    [analysis, features, band, threshold],
     visible,
   );
   return null;
 }
 
-function RegionBadges({ regions, selected, onToggle }: { regions: Region[]; selected: Set<string>; onToggle: (id: string) => void }) {
+function RegionBadges({ regions, selected, onToggle, visible }: { regions: Region[]; selected: Set<string>; onToggle: (id: string) => void; visible: boolean }) {
   const top = useMemo(() => regions.slice(0, 15), [regions]);
   useLayer(
     (g) => {
@@ -231,28 +254,30 @@ function RegionBadges({ regions, selected, onToggle }: { regions: Region[]; sele
       }
     },
     [top, selected],
+    visible,
   );
   return null;
 }
 
 /** Linhas pedidas pelo número/link: traçado exato + paradas. */
-function BusLines({ lines }: { lines: BusLine[] }) {
+function BusLines({ lines, stops, hidden, onHover, visible }: { lines: BusLine[]; stops: boolean; hidden: string[]; onHover?: LineHover; visible: boolean }) {
   useLayer(
     (g) => {
-      const renderer = L.canvas({ padding: 0.3 });
+      const renderer = L.canvas({ padding: 0.3, tolerance: 6 });
       for (const l of lines) {
-        const tip = `<b>${esc(l.ref ?? "")}</b> ${esc(l.name)}${l.operator ? `<br><small>${esc(l.operator)}</small>` : ""}`;
+        if (hidden.includes(lineKey(l))) continue;
         // contorno branco por baixo para a linha destacar sobre o mapa
-        L.polyline(l.segments, { color: "#fff", weight: 8, opacity: 0.9, interactive: false }).addTo(g);
-        L.polyline(l.segments, { color: l.color, weight: 4.5, opacity: 0.95 }).bindTooltip(tip, { sticky: true }).addTo(g);
-        for (const s of l.stops) {
+        L.polyline(l.segments, { renderer, color: "#fff", weight: 8, opacity: 0.9, interactive: false }).addTo(g);
+        hoverable(L.polyline(l.segments, { renderer, color: l.color, weight: 4.5, opacity: 0.95 }), lineKey(l), 4.5, onHover).addTo(g);
+        for (const s of stops ? l.stops : []) {
           L.circleMarker([s.lat, s.lng], { renderer, radius: 4.5, color: l.color, weight: 2, fillColor: "#fff", fillOpacity: 1 })
             .bindTooltip(`Ponto: ${esc(s.name ?? "sem nome")}<br><small>Linha ${esc(l.ref ?? l.name)}</small>`)
             .addTo(g);
         }
       }
     },
-    [lines],
+    [lines, stops, hidden],
+    visible,
   );
   return null;
 }
@@ -351,14 +376,14 @@ export function MapView(p: Props) {
       <ZoomTopRight />
       <FitBounds fit={p.fit} />
       <MapEvents active={p.pickingWork} onPick={p.onPickWork} onBounds={p.onBoundsChange} />
-      <Boundary city={p.city} />
-      <Cells analysis={p.analysis} features={p.features} visible={p.layers.cells} />
-      <Routes analysis={p.analysis} visible={p.layers.routes} />
-      <Pois analysis={p.analysis} features={p.features} visible={p.layers.pois} />
-      <BusLines lines={p.busLines} />
-      {p.analysis && <RegionBadges regions={p.analysis.regions} selected={p.selectedRegions} onToggle={p.onToggleRegion} />}
-      <ListingMarkers listings={p.listings} analysis={p.analysis} focus={p.focusListing} selectedId={p.selectedId} visible={p.layers.listings} onSelect={p.onSelectListing} />
-      <ListingMarkers listings={p.myLinks} analysis={p.analysis} focus={p.focusListing} selectedId={p.selectedId} visible numbered onSelect={p.onSelectListing} />
+      <Boundary city={p.city} visible={p.settings.boundary} />
+      <Cells analysis={p.analysis} features={p.features} band={p.settings.cellBand} visible={p.settings.cells} />
+      <Routes analysis={p.analysis} hidden={p.settings.hiddenLines} onHover={p.onLineHover} visible={p.settings.routes} />
+      <Pois analysis={p.analysis} features={p.features} hidden={p.settings.hiddenPois} visible={p.settings.pois} />
+      <BusLines lines={p.busLines} stops={p.settings.stops} hidden={p.settings.hiddenLines} onHover={p.onLineHover} visible={p.settings.myLines} />
+      {p.analysis && <RegionBadges regions={p.analysis.regions} selected={p.selectedRegions} onToggle={p.onToggleRegion} visible={p.settings.badges} />}
+      <ListingMarkers listings={p.listings} analysis={p.analysis} focus={p.focusListing} selectedId={p.selectedId} visible={p.settings.listings} onSelect={p.onSelectListing} />
+      <ListingMarkers listings={p.myLinks} analysis={p.analysis} focus={p.focusListing} selectedId={p.selectedId} visible={p.settings.myLinks} numbered onSelect={p.onSelectListing} />
       <WorkMarker work={p.work} />
     </MapContainer>
   );

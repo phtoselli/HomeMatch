@@ -1,4 +1,4 @@
-import type { BusLine, LatLng } from "../../shared/types.js";
+import type { BusLine, LatLng, LineTimetable } from "../../shared/types.js";
 import { distance } from "../geo.js";
 import { DAY, HttpError, cached, httpFetch } from "../http.js";
 import type { ParsedRoute } from "../transit.js";
@@ -164,6 +164,42 @@ export function parseEmdecDetail(html: string): EmdecLineDetail {
   return { name: name ? clean(name) : undefined, company: company ? clean(company) : undefined, directions };
 }
 
+/**
+ * Grade de horários da página de detalhe: um bloco "Horários de partida de <ponto>" por sentido,
+ * com "Dias úteis", "Sábados", "Domingos/Feriados" e os horários (às vezes com uma letra de legenda).
+ */
+export function parseEmdecTimetable(html: string, ref: string): LineTimetable {
+  const info = parseEmdecDetail(html);
+  const heads = [...html.matchAll(/id="headingHorarioPartida(\d+)"/g)];
+  const obsAt = html.indexOf('id="headingObservacao"');
+  const directions: LineTimetable["directions"] = heads.map((m, i) => {
+    const end = heads[i + 1]?.index ?? (obsAt > m.index! ? obsAt : html.length);
+    const sec = html.slice(m.index, end);
+    const days: { label: string; times: string[] }[] = [];
+    for (const t of sec.matchAll(/col-12 text-center font-weight-bold[^"]*">([^<]+)<|<small>\s*(\d{1,2}:\d{2}[^<]*)<\/small>/g)) {
+      if (t[1]) days.push({ label: clean(t[1]), times: [] });
+      else if (t[2] && days.length) days[days.length - 1]!.times.push(clean(t[2]));
+    }
+    const direction = Number(m[1]);
+    return {
+      direction,
+      from: clean(sec.match(/Horários de partida de\s*<span[^>]*>([^<]+)</)?.[1] ?? "") || info.directions[direction]?.from,
+      to: clean(sec.match(/Indicação Frontal:\s*<span[^>]*>([^<]+)</)?.[1] ?? "") || info.directions[direction]?.to,
+      days: days.filter((d) => d.times.length),
+    };
+  });
+  const obs = html.match(/id="collapseObservacao"[\s\S]*?<div class="col-12">([\s\S]*?)<\/div>/)?.[1];
+  const note = obs ? clean(obs.replace(/<[^>]+>/g, " ")) : "";
+  return {
+    ref,
+    name: info.name,
+    operator: info.company ? `EMDEC · ${info.company}` : "EMDEC",
+    directions,
+    note: note || undefined,
+    updated: html.match(/Atualizado em ([^<]+)</)?.[1]?.trim(),
+  };
+}
+
 /** "126,1" / "linha 353" → "126.1" / "353". */
 export function normalizeRef(q: string): string {
   return q.trim().replace(/^linha\s+/i, "").replace(",", ".").toUpperCase();
@@ -255,6 +291,13 @@ async function lineInfo(ref: string): Promise<{ name?: string; company?: string;
   }
 }
 
+/** Página de detalhe da linha (nome, empresa, destinos e grade de horários). */
+async function detailHtml(ref: string): Promise<string | null> {
+  const found = (await searchLines(ref)).find((l) => l.ref === ref);
+  if (!found) return null;
+  return getText(EMDEC_URLS.detail, { method: "POST", body: new URLSearchParams({ term: found.code }) });
+}
+
 async function linesFor(refs: string[]): Promise<BusLine[]> {
   const net = await emdecNetwork();
   const out: BusLine[] = [];
@@ -305,6 +348,13 @@ export const emdec: TransitOperator = {
     const refs = [...best.entries()].sort((a, b) => a[1] - b[1]).slice(0, maxLines).map(([r]) => r);
     const lines = await linesFor(refs);
     return lines.map((l) => ({ ...l, nearWorkM: Math.round(perDir.get(key(l.ref!, l.direction!)) ?? Infinity) }));
+  },
+
+  async timetable(ref) {
+    const r = normalizeRef(ref);
+    const html = await detailHtml(r);
+    if (!html) return null;
+    return { ...parseEmdecTimetable(html, r), source: "https://portal.emdec.com.br/consultalinha/" };
   },
 
   async routes(): Promise<ParsedRoute[]> {

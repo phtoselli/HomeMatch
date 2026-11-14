@@ -6,6 +6,7 @@ import type {
   City,
   LinkResult,
   LinksRequest,
+  LineTimetable,
   FeatureDef,
   LatLng,
   Listing,
@@ -68,6 +69,8 @@ export const api = {
     if (box) for (const [k, v] of Object.entries(box)) p.set(k, String(v));
     return getJson<BusLine[]>(`/api/bus?${p}`);
   },
+  /** Grade de horários ("emdec:353"). */
+  timetable: (id: string) => getJson<LineTimetable>(`/api/bus/timetable?id=${encodeURIComponent(id)}`),
   busNear: (at: LatLng, city: CityRef, radius = 700) =>
     getJson<BusLine[]>(`/api/bus/near?${new URLSearchParams({ lat: String(at.lat), lng: String(at.lng), radius: String(radius), ...cityParams(city) })}`),
   operator: (city: CityRef) =>

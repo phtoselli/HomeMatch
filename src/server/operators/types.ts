@@ -1,4 +1,4 @@
-import type { BusLine, LatLng, PlaceResult, TransitOperatorInfo } from "../../shared/types.js";
+import type { BusLine, LatLng, LineTimetable, PlaceResult, TransitOperatorInfo } from "../../shared/types.js";
 import type { ParsedRoute } from "../transit.js";
 
 /** Fonte oficial das linhas de ônibus de uma cidade (o "representante" das linhas). */
@@ -13,4 +13,6 @@ export interface TransitOperator {
   linesNear(p: LatLng, radiusM: number, maxLines: number): Promise<BusLine[]>;
   /** Rede inteira no formato da análise (paradas em ordem, um sentido por item). */
   routes(): Promise<ParsedRoute[]>;
+  /** Grade de horários da linha (null se o operador não publica). */
+  timetable?(ref: string): Promise<LineTimetable | null>;
 }
