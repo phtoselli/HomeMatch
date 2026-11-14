@@ -13,7 +13,8 @@ const CACHE_DIR = join(process.cwd(), "data", "cache");
 
 function cachePath(ns: string, key: string): string {
   const h = createHash("sha1").update(key).digest("hex");
-  return join(CACHE_DIR, ns, `${h}.json`);
+  // O namespace vira pasta: sem ":" e outros caracteres que o Windows não aceita ("site:host" → "site_host").
+  return join(CACHE_DIR, ns.replace(/[^\w.-]/g, "_"), `${h}.json`);
 }
 
 export async function cacheGet<T>(ns: string, key: string, ttlMs: number): Promise<T | undefined> {

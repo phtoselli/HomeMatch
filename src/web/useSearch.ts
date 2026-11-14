@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { AnalysisResult, BBox, City, LatLng, Listing, Region, SourceId } from "../shared/types";
+import type { AnalysisResult, BBox, City, LatLng, Listing, Region, SourceId, SourcesResult } from "../shared/types";
 import { api } from "./api";
 import { DEFAULT_PARAMS, diagnose, wideFilters, type Diagnosis, type Filters, type Params } from "./search";
 import { usePersistent } from "./usePersistent";
@@ -12,11 +12,33 @@ export const MAX_REGIONS = 15;
 
 export type Busy = "analyze" | "listings" | null;
 
+/** Antes de saber o que a cidade tem (ou se a descoberta falhar): os portais. */
+const FALLBACK_SOURCES = ["quintoandar", "chavesnamao", "zapimoveis", "vivareal", "lopes", "olx"];
+
 /** Estado e ações da busca: análise das regiões + imóveis nelas. */
 export function useSearch() {
   const [chosen, setChosen] = usePersistent<Record<string, number>>("features", { atacarejo: 2000, parque: 1500 });
   const [params, setParams] = usePersistent<Params>("params", DEFAULT_PARAMS);
-  const [sources, setSources] = usePersistent<SourceId[]>("sources", ["quintoandar"]);
+  // Fontes: todas as que dá para ler na cidade, menos as que a pessoa desmarcou (novas entram marcadas).
+  const [disabledSources, setDisabledSources] = usePersistent<SourceId[]>("disabledSources", []);
+  const [available, setAvailable] = useState<SourcesResult | null>(null);
+  const [loadingSources, setLoadingSources] = useState(false);
+  const readable = available ? [...available.portals, ...available.agencies].filter((x) => x.status === "ok") : null;
+  const sources: SourceId[] = (readable?.map((x) => x.id) ?? FALLBACK_SOURCES).filter((id) => !disabledSources.includes(id));
+  const setSourceEnabled = (id: SourceId, on: boolean) =>
+    setDisabledSources((d) => (on ? d.filter((x) => x !== id) : [...new Set([...d, id])]));
+
+  /** Portais + imobiliárias da cidade (descoberta no servidor, com cache). */
+  async function loadSources(city: City | null) {
+    setLoadingSources(true);
+    try {
+      setAvailable(await api.sources(city));
+    } catch {
+      setAvailable(null); // segue com os portais padrão
+    } finally {
+      setLoadingSources(false);
+    }
+  }
   const [maxPerRegion, setMaxPerRegion] = usePersistent("maxPerRegion", 100);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [listings, setListings] = useState<Listing[]>([]);
@@ -25,13 +47,20 @@ export function useSearch() {
   const [searchedRegions, setSearchedRegions] = useState<Region[]>([]);
   const [busy, setBusy] = useState<Busy>(null);
   const [log, setLog] = useState<string[]>([]);
+  /** Avisos da busca (site que bloqueou, região que falhou): ficam todos, o log só guarda os últimos. */
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   /** Filtros usados na última busca: se a pessoa afrouxar algum, precisa buscar de novo. */
   const [searchedWith, setSearchedWith] = useState<string | null>(null);
   /** Quando a busca volta vazia: o que existe logo acima do teto e em outros tipos. */
   const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null);
 
-  const say = (m: string) => setLog((l) => [...l.slice(-7), m]);
+  const say = (m: string) => {
+    setLog((l) => [...l.slice(-7), m]);
+    // Um aviso por fonte ("Aviso: OLX: …"): a busca ampliada roda em lotes e repetiria o mesmo bloqueio.
+    const key = (x: string) => x.slice(7).split(":")[0];
+    if (m.startsWith("Aviso: ")) setWarnings((w) => (w.some((x) => key(x) === key(m)) ? w : [...w, m]));
+  };
 
   function reset() {
     setAnalysis(null);
@@ -40,6 +69,7 @@ export function useSearch() {
     setSearchedWith(null);
     setDiagnosis(null);
     setLog([]);
+    setWarnings([]);
     setError(null);
   }
 
@@ -106,6 +136,7 @@ export function useSearch() {
     setBusy("analyze");
     setError(null);
     setLog([]);
+    setWarnings([]);
     setListings([]);
     setSearchedRegions([]);
     setDiagnosis(null);
@@ -136,9 +167,9 @@ export function useSearch() {
   }
 
   return {
-    chosen, setChosen, params, setParams, sources, setSources, maxPerRegion, setMaxPerRegion,
+    chosen, setChosen, params, setParams, sources, setSourceEnabled, available, loadingSources, loadSources, maxPerRegion, setMaxPerRegion,
     analysis, listings, selectedRegions, setSelectedRegions, searchedRegions,
-    busy, log, error, searchedWith, diagnosis, reset, runAll, runListings,
+    busy, log, warnings, error, searchedWith, diagnosis, reset, runAll, runListings,
   };
 }
 

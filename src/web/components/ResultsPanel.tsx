@@ -5,6 +5,7 @@ import { FEATURE_ICON, Icon } from "../icons";
 import { priceOf, slackToReach, tierOf, withBudget, type Filters, type Ranked, type SortKey } from "../search";
 import type { Search } from "../useSearch";
 import { AmenityChips, CommuteChip, MatchBadge, breakdown, overBudget, specsLine } from "./ListingBits";
+import { sourceName } from "../MapView";
 import { Photo } from "./Photo";
 
 interface Props {
@@ -66,7 +67,7 @@ export function ResultsPanel(p: Props) {
   // Se não há nada melhor, as outras opções já aparecem abertas (é o que existe).
   const othersOpen = showOthers || ideal + good + almost === 0;
   const lastMsg = s.log[s.log.length - 1];
-  const warnings = s.log.filter((m) => m.startsWith("Aviso"));
+  const warnings = s.warnings;
   const a = s.analysis;
   const selectedRegions = a?.regions.filter((r) => s.selectedRegions.has(r.id)) ?? [];
 
@@ -94,7 +95,7 @@ export function ResultsPanel(p: Props) {
             {over != null && !misses.some((m) => m.kind === "price") && <b className="over"> · +{money(over)} do alvo</b>}
           </span>
           <span className="lcard-title">{specsLine(l)}</span>
-          <span className="lcard-sub">{l.region ?? l.neighbourhood ?? l.address}</span>
+          <span className="lcard-sub">{l.region ?? l.neighbourhood ?? l.address} · <span className="src-inline">{sourceName(l, "")}{l.agency && l.agency !== sourceName(l) ? ` · ${l.agency}` : ""}</span></span>
           {misses.length > 0 && (
             <span className="lcard-chips" aria-label="O que não bate com o pedido">
               {misses.map((m) => (

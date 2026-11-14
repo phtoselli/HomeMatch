@@ -69,10 +69,12 @@ export function App() {
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Quem publica as linhas de ônibus da cidade escolhida (ex.: Campinas → EMDEC).
+  // Quem publica as linhas de ônibus da cidade escolhida (ex.: Campinas → EMDEC) e
+  // quais portais e imobiliárias atendem a cidade.
   useEffect(() => {
     setOperator(null);
     if (city) api.operator(city).then(setOperator).catch(() => setOperator(null));
+    void search.loadSources(city);
   }, [city?.osmId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

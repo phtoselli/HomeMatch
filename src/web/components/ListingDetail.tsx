@@ -3,7 +3,7 @@ import type { BusLine, FeatureDef, LatLng } from "../../shared/types";
 import { PROPERTY_TYPE_LABEL } from "../../shared/types";
 import { distM, meters, money, walkMin } from "../format";
 import { FEATURE_ICON, Icon, type IconName } from "../icons";
-import { SOURCE_LABEL } from "../MapView";
+import { sourceName } from "../MapView";
 import { AMENITY_FILTERS, ceilingOf, hasAmenity, priceOf, type Filters, type Ranked } from "../search";
 import { MatchBadge, shortVia } from "./ListingBits";
 import { Photo } from "./Photo";
@@ -114,7 +114,7 @@ export function ListingDetail({ item: { l, cell, match }, filters: f, maxCommute
             <Icon name="back" /> Voltar ao mapa
           </button>
           <a className="btn" href={l.url} target="_blank" rel="noopener">
-            Abrir no {SOURCE_LABEL[l.source] ?? "site"} <Icon name="ext" size={15} />
+            Abrir no {sourceName(l)} <Icon name="ext" size={15} />
           </a>
         </header>
 
@@ -126,7 +126,7 @@ export function ListingDetail({ item: { l, cell, match }, filters: f, maxCommute
               <div className="detail-head">
                 <div className="row">
                   <MatchBadge value={match} />
-                  <span className="tagline">{SOURCE_LABEL[l.source] ?? l.source}</span>
+                  <span className="tagline">{sourceName(l, l.source)}{l.agency && l.agency !== sourceName(l) ? ` · ${l.agency}` : ""}</span>
                   {l.region && <span className="tagline">{l.region}</span>}
                 </div>
                 <h1 id="detail-title" className="display">{l.title || l.typeLabel}</h1>
@@ -228,7 +228,7 @@ export function ListingDetail({ item: { l, cell, match }, filters: f, maxCommute
                   </div>
                 )}
                 <a className="btn primary big block" href={l.url} target="_blank" rel="noopener">
-                  Ver anúncio no {SOURCE_LABEL[l.source] ?? "site"} <Icon name="ext" size={16} />
+                  Ver anúncio no {sourceName(l)} <Icon name="ext" size={16} />
                 </a>
                 <span className="hint center">Visita e proposta são feitas no site do anúncio.</span>
               </section>

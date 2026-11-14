@@ -9,7 +9,8 @@ import { findBusLines, findBusLinesNear } from "./busline.js";
 import { operatorById, operatorFor } from "./operators/index.js";
 import { resolveLink } from "./links.js";
 import { FEATURES } from "./features.js";
-import { SOURCES, searchListings } from "./listings/index.js";
+import { discoverSources, portalSources } from "./listings/discovery.js";
+import { searchListings } from "./listings/index.js";
 import { getCity, reverse, searchAddress, searchCities } from "./osm/nominatim.js";
 
 // API_PORT (não PORT): ferramentas de preview costumam definir PORT para o Vite.
@@ -38,7 +39,7 @@ const listingsSchema = z.object({
     .array(z.object({ id: z.string(), name: z.string(), lat: z.number(), lng: z.number(), bbox }))
     .min(1)
     .max(15),
-  sources: z.array(z.enum(["quintoandar", "vivareal"])).min(1),
+  sources: z.array(z.string().min(1).max(120)).min(1).max(40),
   maxPerRegion: z.number().min(10).max(300),
   filters: z
     .object({
@@ -79,7 +80,12 @@ app.get("/api/health", async () => ({ ok: true }));
 
 app.get("/api/features", async () => FEATURES);
 
-app.get("/api/sources", async () => Object.values(SOURCES).map((s) => ({ id: s.id, label: s.label })));
+/** Portais + imobiliárias da cidade (descobertas no OpenStreetMap) e se dá para ler cada uma. */
+app.get("/api/sources", async (req) => {
+  const { cityId } = z.object({ cityId: z.string().regex(/^[NWR]\d+$/).optional() }).parse(req.query);
+  if (!cityId) return { city: "", portals: portalSources(), agencies: [] };
+  return discoverSources(await getCity(cityId), (m) => req.log.info(m));
+});
 
 app.get("/api/cities", async (req) => {
   const { q } = z.object({ q: z.string().min(2) }).parse(req.query);

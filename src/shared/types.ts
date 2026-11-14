@@ -153,13 +153,44 @@ export const PROPERTY_TYPE_LABEL: Record<PropertyType, string> = {
   outro: "Outro",
 };
 
-export type SourceId = "quintoandar" | "vivareal";
+/**
+ * Fonte de anúncios: um portal com extensão própria ("quintoandar", "chavesnamao"…) ou o site de uma
+ * imobiliária achada na cidade ("site:gallinari.com.br"), lido pela extensão genérica.
+ */
+export type SourceId = string;
 /** "outro" = link colado de um site sem raspador próprio. */
 export type ListingSource = SourceId | "outro";
+
+/** Uma fonte que dá (ou não) para ler na cidade escolhida. */
+export interface SourceInfo {
+  id: SourceId;
+  label: string;
+  /** portal = site que junta anúncios de muitas imobiliárias; imobiliaria = site da própria imobiliária. */
+  kind: "portal" | "imobiliaria";
+  site: string;
+  /**
+   * ok = lemos; robots = o site pede para robôs não lerem (respeitamos); bloqueado = o site barra leitura automática;
+   * sem-dados = a página não traz os anúncios num formato que dê para ler (falta uma extensão própria); erro = fora do ar.
+   */
+  status: "ok" | "robots" | "bloqueado" | "sem-dados" | "erro";
+  /** Plataforma do site, quando reconhecida ("Kenlo", "Imoview", "Sites do Mercado"…). */
+  platform?: string;
+  note?: string;
+}
+
+export interface SourcesResult {
+  city: string;
+  portals: SourceInfo[];
+  agencies: SourceInfo[];
+}
 
 export interface Listing {
   id: string; // "<fonte>:<id na fonte>"
   source: ListingSource;
+  /** Nome da fonte para mostrar ("Chaves na Mão", "Imobiliária Gallinari"). */
+  sourceLabel?: string;
+  /** Imobiliária que anuncia, quando o portal informa. */
+  agency?: string;
   url: string;
   title: string;
   type: PropertyType;

@@ -1,7 +1,7 @@
 import type { BusLine, Listing } from "../../shared/types";
 import { meters, money, nearestStop, walkMin } from "../format";
 import { Icon } from "../icons";
-import { SOURCE_LABEL } from "../MapView";
+import { sourceName } from "../MapView";
 import { priceOf, type Filters, type Ranked } from "../search";
 import { MatchBadge, overBudget, shortVia, specsLine } from "./ListingBits";
 import { Photo } from "./Photo";
@@ -56,7 +56,7 @@ export function PreviewCard({ item: { l, cell, match }, filters, busLines, onOpe
         <div className="row">
           <button type="button" className="btn primary grow" onClick={onOpen}>Ver detalhes</button>
           <a className="btn" href={l.url} target="_blank" rel="noopener">
-            {SOURCE_LABEL[l.source] ?? "Anúncio"} <Icon name="ext" size={15} />
+            {sourceName(l, "Anúncio")} <Icon name="ext" size={15} />
           </a>
         </div>
       </div>

@@ -15,8 +15,9 @@ Dois modos:
      (caminhada até a parada + espera + viagem + caminhada final);
    - mantém só as áreas que têm **tudo** o que você pediu dentro do raio;
    - dá nota (trajeto × proximidade, peso ajustável) e ranqueia os bairros.
-4. **Buscar imóveis** nas regiões marcadas: raspa QuintoAndar (API da busca por mapa) e VivaReal
-   (página pública do bairro) e mostra os anúncios no mapa. Dá para filtrar por tipo, preço
+4. **Buscar imóveis** nas regiões marcadas, em vários sites ao mesmo tempo: portais (QuintoAndar, Chaves na Mão,
+   ZAP, VivaReal, Lopes, OLX) e as **imobiliárias da cidade**, achadas no OpenStreetMap ao escolher a cidade
+   (as que publicam os anúncios em schema.org são lidas pela extensão genérica). Mostra tudo no mapa. Dá para filtrar por tipo, preço
    (total ou só aluguel) e quartos, e ordenar por preço, trajeto ou área.
 
 **🔗 Meus links**
@@ -51,7 +52,8 @@ npm run typecheck
 | Cidades, endereços | `src/server/osm/nominatim.ts` | Nominatim (1 req/s) |
 | Linhas e paradas, lugares | `src/server/osm/overpass.ts`, `transit.ts`, `features.ts` | Overpass API |
 | Nota e ranking | `src/server/analysis.ts` | — |
-| Imóveis | `src/server/listings/*` | QuintoAndar, VivaReal |
+| Imóveis | `src/server/listings/*` (motor em `core/`, sites em `extensions/`) | portais + sites das imobiliárias (robots.txt respeitado) |
+| Imobiliárias da cidade | `src/server/listings/discovery.ts` | OSM `office=estate_agent` + site de cada uma |
 | Meus links | `src/server/links.ts` | página do anúncio |
 | Linha pelo número/link | `src/server/busline.ts` | Overpass (`out geom`) |
 | Mapa | `src/web/*` | React + Leaflet, tiles OSM |
@@ -69,8 +71,16 @@ A primeira análise de uma cidade grande pode levar alguns minutos; as seguintes
   e o parse correspondente. QuintoAndar só tem anúncios nas cidades onde opera.
 - Uso pessoal: o servidor respeita intervalos entre requisições e usa cache; não rode buscas em massa.
 
-## Adicionando uma imobiliária
+## Adicionando um site (extensão)
 
-1. Crie `src/server/listings/<site>.ts` com um **parse puro** (`html/json → Listing[]`) e um `search` que só busca e chama o parse.
-2. Salve uma página real em `tests/fixtures/` e teste o parse em `tests/listings/`.
-3. Registre em `src/server/listings/index.ts` e no tipo `SourceId` (`src/shared/types.ts`).
+O motor comum (`src/server/listings/core/engine.ts`) já cuida de robots.txt, ritmo, cache, bloqueio, paginação,
+total do mês, tipo, comodidades e posição no mapa. Uma extensão só diz o que é particular do site:
+
+1. Crie `src/server/listings/extensions/<site>.ts` exportando um `SiteExtension` (`core/types.ts`):
+   `url(ctx)` da página de busca (por bairro, ou da cidade inteira com `scope: "city"`) e um `parse(html)` **puro**
+   que devolve `RawListing[]`. Se o site publica schema.org, use `parseSchemaOrgListings` e pronto.
+2. Salve um recorte de uma página real em `tests/fixtures/` e teste o parse em `tests/listings/extensions.test.ts`.
+3. Registre em `src/server/listings/index.ts` (`extensionSource(...)`) e descreva em `portals.ts`.
+
+Imobiliárias pequenas não precisam de código: se o site delas publica schema.org, a descoberta já as lê. Para uma
+**plataforma** de sites de imobiliária (Kenlo, Imoview…), uma extensão serve para todas as imobiliárias que a usam.

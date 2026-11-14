@@ -40,6 +40,9 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
 export const SOURCE_LABEL: Record<string, string> = { quintoandar: "QuintoAndar", vivareal: "VivaReal", outro: "Link" };
 
+/** Nome da fonte para mostrar: o que o servidor mandou, ou o nome conhecido. */
+export const sourceName = (l: { source: string; sourceLabel?: string }, fallback = "site") => l.sourceLabel ?? SOURCE_LABEL[l.source] ?? fallback;
+
 function FitBounds({ fit }: { fit: Props["fit"] }) {
   const map = useMap();
   useEffect(() => {

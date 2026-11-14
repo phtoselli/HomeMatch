@@ -7,6 +7,7 @@ import { FEATURE_ICON, Icon } from "../icons";
 import { AMENITY_FILTERS, SEARCH_TYPES, WIDE, ceilingOf, withBudget, type Filters } from "../search";
 import type { Search } from "../useSearch";
 import { SearchBox } from "./SearchBox";
+import { SourcesPicker, sourcesSummary } from "./SourcesPicker";
 
 interface Props {
   /** 0–1: o básico; 2 ou mais: abre já com "Mais opções" aberto (ex.: chip "Mais filtros"). */
@@ -47,6 +48,12 @@ export function SetupWizard(p: Props) {
   const [lineMsg, setLineMsg] = useState<string | null>(null);
   const [lineBusy, setLineBusy] = useState(false);
   const moreRef = useRef<HTMLDetailsElement>(null);
+  const sourcesRef = useRef<HTMLFieldSetElement>(null);
+
+  function showSources() {
+    setMoreOpen(true);
+    setTimeout(() => sourcesRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }), 50);
+  }
 
   useEffect(() => {
     if (p.step >= 2) {
@@ -112,6 +119,12 @@ export function SetupWizard(p: Props) {
                 <Icon name="pin" size={14} /> {p.city.name}{p.city.stateCode ? ` - ${p.city.stateCode}` : ""}
                 {p.operator && <span className="muted"> · ônibus: {p.operator.name}</span>}
                 <button type="button" className="linkbtn" onClick={() => setCityEdit(true)}>Trocar cidade</button>
+              </p>
+            )}
+            {p.city && (
+              <p className="hint city-line">
+                {s.loadingSources ? <span className="spinner small" /> : <Icon name="home" size={14} />} {sourcesSummary(s, p.city.name)}
+                {!s.loadingSources && <button type="button" className="linkbtn" onClick={showSources}>Ver quais</button>}
               </p>
             )}
             {p.loadingCity && <p className="hint"><span className="spinner small" /> Carregando os limites da cidade…</p>}
@@ -224,7 +237,7 @@ export function SetupWizard(p: Props) {
         </div>
 
         <details className="more" ref={moreRef} open={moreOpen} onToggle={(e) => setMoreOpen((e.target as HTMLDetailsElement).open)}>
-          <summary>Mais opções <span className="muted">(tipo de imóvel, distâncias, linha de ônibus, sites)</span></summary>
+          <summary>Mais opções <span className="muted">(tipo de imóvel, distâncias, linha de ônibus, sites e imobiliárias)</span></summary>
 
           <fieldset className="field">
             <legend className="label">Tipo de imóvel</legend>
@@ -300,22 +313,15 @@ export function SetupWizard(p: Props) {
             </label>
           </div>
 
-          <fieldset className="field">
+          <fieldset className="field" ref={sourcesRef}>
             <legend className="label">Onde buscar</legend>
-            <div className="row">
-              {(["quintoandar", "vivareal"] as const).map((src) => (
-                <label key={src} className="check">
-                  <input type="checkbox" checked={s.sources.includes(src)} onChange={() => s.setSources(s.sources.includes(src) ? s.sources.filter((x) => x !== src) : [...s.sources, src])} />
-                  {src === "quintoandar" ? "QuintoAndar" : "VivaReal"}
-                  {src === "vivareal" && <span className="muted">(costuma bloquear)</span>}
-                </label>
-              ))}
-              <label className="check">
-                <input type="checkbox" checked={!!f.hideUnknown} onChange={() => setF({ hideUnknown: !f.hideUnknown })} />
-                Esconder anúncios que não dizem se têm os itens do passo 6
-              </label>
-            </div>
+            <SourcesPicker s={s} cityName={p.city?.name} />
           </fieldset>
+
+          <label className="check">
+            <input type="checkbox" checked={!!f.hideUnknown} onChange={() => setF({ hideUnknown: !f.hideUnknown })} />
+            Esconder anúncios que não dizem se têm os itens da pergunta 6
+          </label>
 
           <div className="grid3">
             <label className="field">

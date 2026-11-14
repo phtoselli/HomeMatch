@@ -3,7 +3,7 @@ import type { BBox, BusLine, City, LatLng, LinkResult, TransitOperatorInfo } fro
 import { api } from "../api";
 import { meters, money, nearestStop, walkMin } from "../format";
 import { Icon } from "../icons";
-import { SOURCE_LABEL } from "../MapView";
+import { sourceName } from "../MapView";
 
 interface Props {
   city: City | null;
@@ -156,7 +156,7 @@ export function LinksPanel(p: Props) {
                           {l.area ? ` · ${l.area} m²` : ""}{l.bedrooms ? ` · ${l.bedrooms} qto` : ""}
                         </div>
                         <div className="lmeta">
-                          {SOURCE_LABEL[l.source]} · {l.address ?? l.title}
+                          {sourceName(l)} · {l.address ?? l.title}
                           {l.approxLocation && <span className="tag">aprox.</span>}
                         </div>
                         {p.lines.map((line) => {

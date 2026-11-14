@@ -1,4 +1,4 @@
-import type { City, Listing, ListingFilters, Region, SourceId } from "../../shared/types.js";
+import type { City, Listing, ListingFilters, Region } from "../../shared/types.js";
 
 export interface SearchArgs {
   city: Pick<City, "name" | "stateCode" | "bbox">;
@@ -15,7 +15,7 @@ export interface SearchArgs {
  * Depois registre em listings/index.ts.
  */
 export interface SourceAdapter {
-  id: SourceId;
+  id: string;
   label: string;
   search(args: SearchArgs): Promise<Listing[]>;
 }
