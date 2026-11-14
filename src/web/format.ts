@@ -44,7 +44,7 @@ export function scoreColor(score: number): string {
 }
 
 /** Índice simples para achar a célula analisada mais próxima de um ponto. */
-export function makeCellLookup(cells: Cell[], cellSizeM: number) {
+export function makeCellLookup(cells: Cell[], cellSizeM: number, maxM = cellSizeM * 0.75) {
   const step = 0.01;
   const buckets = new Map<string, Cell[]>();
   const key = (lat: number, lng: number) => `${Math.floor(lat / step)}:${Math.floor(lng / step)}`;
@@ -54,7 +54,7 @@ export function makeCellLookup(cells: Cell[], cellSizeM: number) {
     if (!a) buckets.set(k, (a = []));
     a.push(c);
   }
-  const maxDeg = (cellSizeM * 0.75) / 111_320;
+  const maxDeg = maxM / 111_320;
   return (p: LatLng): Cell | undefined => {
     let best: Cell | undefined;
     let bestD = Infinity;

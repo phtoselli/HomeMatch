@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import type { AnalysisResult, BBox, BusLine, City, FeatureDef, LatLng, Listing, Region } from "../shared/types";
 import { makeCellLookup, meters, moneyShort, scoreColor } from "./format";
+import { FEATURE_ICON, iconSvg } from "./icons";
 
 export interface Layers {
   routes: boolean;
@@ -29,8 +30,10 @@ interface Props {
   layers: Layers;
   fit: { bbox: BBox; key: number } | null;
   onBoundsChange?: (b: BBox) => void;
-  /** Clique num imóvel: abre os detalhes (modal). */
-  onOpenListing: (l: Listing) => void;
+  /** Imóvel selecionado (pin escuro + prévia). */
+  selectedId: string | null;
+  /** Clique num pin: seleciona o imóvel. */
+  onSelectListing: (l: Listing) => void;
 }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -93,8 +96,8 @@ function WorkMarker({ work }: { work: LatLng | null }) {
   useLayer(
     (g) => {
       if (!work) return;
-      const icon = L.divIcon({ className: "", html: '<div class="pin-work">💼</div>', iconSize: [36, 36], iconAnchor: [18, 34] });
-      L.marker([work.lat, work.lng], { icon, zIndexOffset: 1000 }).bindTooltip("Trabalho").addTo(g);
+      const icon = L.divIcon({ className: "", html: `<div class="pin-work">${iconSvg("brief", 16)}<span>Trabalho</span></div>`, iconSize: undefined as unknown as L.PointExpression, iconAnchor: [44, 40] });
+      L.marker([work.lat, work.lng], { icon, zIndexOffset: 1000, keyboard: false }).addTo(g);
     },
     [work?.lat, work?.lng],
   );
@@ -116,12 +119,12 @@ function Routes({ analysis, visible }: { analysis: AnalysisResult | null; visibl
   return null;
 }
 
-/** A partir deste zoom os lugares viram pins com ícone (🛒, 🌳…); antes, pontos coloridos. */
+/** A partir deste zoom os lugares viram pins com ícone (carrinho, árvore…); antes, pontos coloridos. */
 const PIN_ZOOM = 14;
 /** Até quantos lugares dá para mostrar todos como pin sem pesar o mapa. */
 const MAX_PINS = 300;
 
-/** Pin com o ícone da característica (🛒 mercado, 🌳 parque, 🏋️ academia…) para cada lugar ativo. */
+/** Pin com o ícone da característica (mercado, parque, academia…) para cada lugar ativo. */
 function Pois({ analysis, features, visible }: { analysis: AnalysisResult | null; features: FeatureDef[]; visible: boolean }) {
   const icons = useMemo(() => {
     const m = new Map<string, L.DivIcon>();
@@ -130,10 +133,10 @@ function Pois({ analysis, features, visible }: { analysis: AnalysisResult | null
         f.id,
         L.divIcon({
           className: "",
-          html: `<div class="pin-poi" style="--c:${f.color}"><span>${f.emoji}</span></div>`,
-          iconSize: [28, 34],
-          iconAnchor: [14, 33],
-          tooltipAnchor: [0, -28],
+          html: `<div class="pin-poi" style="--c:${f.color}">${FEATURE_ICON[f.id] ? iconSvg(FEATURE_ICON[f.id]!, 15) : `<span>${f.emoji}</span>`}</div>`,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14],
+          tooltipAnchor: [0, -14],
         }),
       );
     }
@@ -157,7 +160,7 @@ function Pois({ analysis, features, visible }: { analysis: AnalysisResult | null
         const icon = icons.get(fid);
         for (const p of list) {
           if (!few && close && !area.contains([p.lat, p.lng])) continue;
-          const tip = `${def?.emoji ?? ""} <b>${esc(p.name ?? def?.label ?? fid)}</b>${def ? `<br><small>${esc(def.label)}</small>` : ""}`;
+          const tip = `<b>${esc(p.name ?? def?.label ?? fid)}</b>${def ? `<br><small>${esc(def.label)}</small>` : ""}`;
           (close && icon
             ? L.marker([p.lat, p.lng], { icon, riseOnHover: true, zIndexOffset: -100 })
             : L.circleMarker([p.lat, p.lng], { renderer, radius: 5, color: "#fff", weight: 1.5, fillColor: def?.color ?? "#333", fillOpacity: 0.95 })
@@ -186,7 +189,7 @@ function Cells({ analysis, features, visible }: { analysis: AnalysisResult | nul
         const feats = Object.entries(c.featureDist)
           .map(([k, d]) => {
             const f = features.find((x) => x.id === k);
-            return `${f?.emoji ?? ""} ${esc(f?.label ?? k)}: ${meters(d)}`;
+            return `${esc(f?.label ?? k)}: ${meters(d)}`;
           })
           .join("<br>");
         L.rectangle(
@@ -194,7 +197,7 @@ function Cells({ analysis, features, visible }: { analysis: AnalysisResult | nul
           { renderer, stroke: false, fillColor: scoreColor(c.score), fillOpacity: 0.45 },
         )
           .bindTooltip(
-            `<b>${esc(c.region)}</b> · nota ${c.score.toFixed(0)}<br>🚌 ~${c.commuteMin} min (${esc(c.via)})${feats ? `<br>${feats}` : ""}`,
+            `<b>${esc(c.region)}</b> · nota ${c.score.toFixed(0)}<br>~${c.commuteMin} min até o trabalho (${esc(c.via)})${feats ? `<br>${feats}` : ""}`,
             { sticky: true },
           )
           .addTo(g);
@@ -220,7 +223,7 @@ function RegionBadges({ regions, selected, onToggle }: { regions: Region[]; sele
         });
         L.marker([r.lat, r.lng], { icon, zIndexOffset: 500 - r.rank })
           .on("click", () => onToggle(r.id))
-          .bindTooltip(`~${r.commuteMin} min · nota ${r.score.toFixed(0)} · clique para ${on ? "remover da" : "incluir na"} busca de imóveis`)
+          .bindTooltip(`~${r.commuteMin} min até o trabalho · nota ${r.score.toFixed(0)}<br><small>clique para ${on ? "tirar da" : "incluir na"} busca de imóveis</small>`)
           .addTo(g);
       }
     },
@@ -241,7 +244,7 @@ function BusLines({ lines }: { lines: BusLine[] }) {
         L.polyline(l.segments, { color: l.color, weight: 4.5, opacity: 0.95 }).bindTooltip(tip, { sticky: true }).addTo(g);
         for (const s of l.stops) {
           L.circleMarker([s.lat, s.lng], { renderer, radius: 4.5, color: l.color, weight: 2, fillColor: "#fff", fillOpacity: 1 })
-            .bindTooltip(`🚏 ${esc(s.name ?? "Parada")}<br><small>${esc(l.ref ?? l.name)}</small>`)
+            .bindTooltip(`Ponto: ${esc(s.name ?? "sem nome")}<br><small>Linha ${esc(l.ref ?? l.name)}</small>`)
             .addTo(g);
         }
       }
@@ -252,64 +255,80 @@ function BusLines({ lines }: { lines: BusLine[] }) {
 }
 
 
+function priceIcon(l: Listing & { index?: number }, selected: boolean, numbered?: boolean): L.DivIcon {
+  const cls = `${selected ? " on" : ""}${l.approxLocation ? " approx" : ""}`;
+  return L.divIcon({
+    className: "",
+    html: numbered
+      ? `<div class="pin-link${cls}"><b>${l.index}</b>${l.rent ? moneyShort(l.total) : ""}</div>`
+      : `<div class="pin-price${cls}">${l.rent ? moneyShort(l.total) : "?"}</div>`,
+    iconSize: undefined as unknown as L.PointExpression,
+    iconAnchor: numbered ? [16, 15] : [30, 14],
+  });
+}
+
 function ListingMarkers({
   listings,
   analysis,
   focus,
+  selectedId,
   visible,
   numbered,
-  onOpen,
+  onSelect,
 }: {
   listings: (Listing & { index?: number })[];
   analysis: AnalysisResult | null;
   focus: string | null;
+  selectedId: string | null;
   visible: boolean;
   numbered?: boolean;
-  onOpen: (l: Listing) => void;
+  onSelect: (l: Listing) => void;
 }) {
   const map = useMap();
-  const markers = useRef(new Map<string, L.Marker>());
+  const markers = useRef(new Map<string, { m: L.Marker; l: Listing & { index?: number } }>());
   const lookup = useMemo(() => (analysis ? makeCellLookup(analysis.cells, analysis.cellSizeM) : null), [analysis]);
+  const selRef = useRef(selectedId);
+  selRef.current = selectedId;
   useLayer(
     (g) => {
       markers.current.clear();
       for (const l of listings) {
-        const icon = numbered
-          ? L.divIcon({
-              className: "",
-              html: `<div class="pin-link${l.approxLocation ? " approx" : ""}"><b>${l.index}</b>${l.rent ? moneyShort(l.total) : ""}</div>`,
-              iconSize: undefined as unknown as L.PointExpression,
-              iconAnchor: [16, 36],
-            })
-          : L.divIcon({
-              className: "",
-              html: `<div class="pin-price src-${l.source}${l.approxLocation ? " approx" : ""}">${moneyShort(l.total)}</div>`,
-              iconSize: undefined as unknown as L.PointExpression,
-              iconAnchor: [30, 12],
-            });
         const cell = lookup?.(l);
-        const tip = `${esc(l.typeLabel)}${l.bedrooms ? ` · ${l.bedrooms} qto` : ""}${l.area ? ` · ${l.area} m²` : ""}${cell ? ` · 🚌 ~${cell.commuteMin} min` : ""}<br><small>clique para ver detalhes</small>`;
-        const m = L.marker([l.lat, l.lng], { icon, riseOnHover: true, zIndexOffset: numbered ? 800 : 200 })
-          .bindTooltip(tip, { direction: "top", offset: [0, -10] })
-          .on("click", () => onOpen(l))
+        const tip = `${esc(l.typeLabel)}${l.bedrooms ? ` · ${l.bedrooms} qto` : ""}${l.area ? ` · ${l.area} m²` : ""}${cell ? ` · ~${cell.commuteMin} min` : ""}`;
+        const on = selRef.current === l.id;
+        const m = L.marker([l.lat, l.lng], { icon: priceIcon(l, on, numbered), riseOnHover: true, zIndexOffset: on ? 2000 : numbered ? 800 : 200, title: `${l.typeLabel}, ${moneyShort(l.total)}` })
+          .bindTooltip(tip, { direction: "top", offset: [0, -14] })
+          .on("click", () => onSelect(l))
           .addTo(g);
-        markers.current.set(l.id, m);
+        markers.current.set(l.id, { m, l });
       }
     },
-    [listings, lookup, onOpen],
+    [listings, lookup, onSelect],
     visible,
   );
+  // Seleção: troca só o ícone dos dois pins envolvidos (sem refazer a camada).
+  const prev = useRef<string | null>(null);
   useEffect(() => {
-    const m = focus ? markers.current.get(focus) : undefined;
-    if (m) map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 15), { duration: 0.6 });
+    for (const id of [prev.current, selectedId]) {
+      const e = id ? markers.current.get(id) : undefined;
+      if (!e) continue;
+      const on = id === selectedId;
+      e.m.setIcon(priceIcon(e.l, on, numbered));
+      e.m.setZIndexOffset(on ? 2000 : numbered ? 800 : 200);
+    }
+    prev.current = selectedId;
+  }, [selectedId, numbered]);
+  useEffect(() => {
+    const e = focus ? markers.current.get(focus) : undefined;
+    if (e) map.flyTo(e.m.getLatLng(), Math.max(map.getZoom(), 15), { duration: 0.6 });
   }, [focus, map]);
   return null;
 }
 
-function ZoomBottomRight() {
+function ZoomTopRight() {
   const map = useMap();
   useEffect(() => {
-    const z = L.control.zoom({ position: "bottomright" }).addTo(map);
+    const z = L.control.zoom({ position: "topright", zoomInTitle: "Aproximar", zoomOutTitle: "Afastar" }).addTo(map);
     return () => {
       z.remove();
     };
@@ -326,7 +345,7 @@ export function MapView(p: Props) {
         maxZoom={19}
         className="osm-tiles"
       />
-      <ZoomBottomRight />
+      <ZoomTopRight />
       <FitBounds fit={p.fit} />
       <MapEvents active={p.pickingWork} onPick={p.onPickWork} onBounds={p.onBoundsChange} />
       <Boundary city={p.city} />
@@ -335,8 +354,8 @@ export function MapView(p: Props) {
       <Pois analysis={p.analysis} features={p.features} visible={p.layers.pois} />
       <BusLines lines={p.busLines} />
       {p.analysis && <RegionBadges regions={p.analysis.regions} selected={p.selectedRegions} onToggle={p.onToggleRegion} />}
-      <ListingMarkers listings={p.listings} analysis={p.analysis} focus={p.focusListing} visible={p.layers.listings} onOpen={p.onOpenListing} />
-      <ListingMarkers listings={p.myLinks} analysis={p.analysis} focus={p.focusListing} visible numbered onOpen={p.onOpenListing} />
+      <ListingMarkers listings={p.listings} analysis={p.analysis} focus={p.focusListing} selectedId={p.selectedId} visible={p.layers.listings} onSelect={p.onSelectListing} />
+      <ListingMarkers listings={p.myLinks} analysis={p.analysis} focus={p.focusListing} selectedId={p.selectedId} visible numbered onSelect={p.onSelectListing} />
       <WorkMarker work={p.work} />
     </MapContainer>
   );

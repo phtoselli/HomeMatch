@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { BBox, BusLine, City, LatLng, LinkResult, TransitOperatorInfo } from "../../shared/types";
 import { api } from "../api";
 import { meters, money, nearestStop, walkMin } from "../format";
+import { Icon } from "../icons";
 import { SOURCE_LABEL } from "../MapView";
 
 interface Props {
@@ -134,7 +135,7 @@ export function LinksPanel(p: Props) {
         />
         <div className="row">
           <button className="primary" disabled={busy !== null || !text.trim()} onClick={addLinks}>
-            {busy === "links" ? <><span className="spinner" /> Lendo links…</> : "📍 Marcar no mapa"}
+            {busy === "links" ? <><span className="spinner" /> Lendo links…</> : <><Icon name="pin" /> Marcar no mapa</>}
           </button>
           {p.results.length > 0 && (
             <button className="ghost" onClick={() => p.setResults([])}>Limpar</button>
@@ -185,7 +186,7 @@ export function LinksPanel(p: Props) {
                       p.setResults((prev) => prev.filter((x) => x.index !== r.index));
                     }}
                   >
-                    ×
+                    <Icon name="x" />
                   </button>
                 </li>
               );
@@ -209,7 +210,7 @@ export function LinksPanel(p: Props) {
             onKeyDown={(e) => e.key === "Enter" && addBus()}
           />
           <button className="primary" disabled={busy !== null || !busQ.trim()} onClick={addBus}>
-            {busy === "bus" ? <span className="spinner" /> : "🚌 Mostrar"}
+            {busy === "bus" ? <span className="spinner" /> : <><Icon name="bus" /> Mostrar</>}
           </button>
         </div>
         {!p.city && <p className="hint">Sem cidade escolhida, a busca usa a área visível do mapa.</p>}
@@ -223,7 +224,7 @@ export function LinksPanel(p: Props) {
               )}
             </p>
             <button className="ghost" disabled={busy !== null || !p.work} onClick={nearWork}>
-              🔎 Linhas que passam perto do trabalho{!p.work ? " (marque o trabalho)" : ""}
+              <Icon name="search" /> Linhas que passam perto do trabalho{!p.work ? " (marque o trabalho)" : ""}
             </button>
           </>
         )}
@@ -240,15 +241,15 @@ export function LinksPanel(p: Props) {
                   <span className="lmeta">
                     {l.from && l.to ? `${l.from} → ${l.to} · ` : ""}{l.stops.length} paradas{l.operator ? ` · ${l.operator}` : ""}
                     {l.website && l.source && l.source !== "osm" && (
-                      <> · <a href={l.website} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()}>mapa oficial ↗</a></>
+                      <> · <a href={l.website} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()}>mapa oficial</a></>
                     )}
                     {p.work && (() => {
                       const ns = nearestStop(l, p.work);
-                      return ns ? ` · 💼 parada a ${meters(ns.dist)} do trabalho` : " · 💼 não passa perto do trabalho";
+                      return ns ? ` · ponto a ${meters(ns.dist)} do trabalho` : " · não passa perto do trabalho";
                     })()}
                   </span>
                 </button>
-                <button className="x" title="Remover" onClick={() => p.setLines((prev) => prev.filter((x) => x.id !== l.id))}>×</button>
+                <button className="x" title="Remover" aria-label="Remover linha" onClick={() => p.setLines((prev) => prev.filter((x) => x.id !== l.id))}><Icon name="x" /></button>
               </li>
             ))}
           </ul>

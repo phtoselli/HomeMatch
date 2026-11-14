@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { PlaceResult } from "../../shared/types";
+import { Icon } from "../icons";
 
 interface Props {
   placeholder: string;
@@ -77,8 +78,8 @@ export function SearchBox({ placeholder, search, onSelect, initial = "", minChar
           onFocus={() => items.length && setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
         />
-        <button className="ghost icon" title="Buscar" aria-label="Buscar" disabled={loading} onClick={() => void run()}>
-          {loading ? <span className="spinner small" /> : "🔎"}
+        <button type="button" className="btn icon" title="Buscar" aria-label="Buscar" disabled={loading} onClick={() => void run()}>
+          {loading ? <span className="spinner small" /> : <Icon name="search" size={18} />}
         </button>
       </div>
       {open && items.length > 0 && (
