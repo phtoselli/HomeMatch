@@ -4,8 +4,13 @@ Objetivo: ter o HomeMatch no ar, funcionando no celular e no computador a qualqu
 com uma base que aguente crescer (mais cidades, mais fontes, mais pessoas) sem reescrever tudo.
 
 Decisões já tomadas:
-- Favoritos ficam no navegador (sem login por enquanto).
-- Uso pessoal no começo: dá para usar planos gratuitos que proíbem uso comercial (Vercel Hobby).
+- Favoritos, filtros, linhas e última busca ficam no navegador (localStorage). Sem login.
+- Uso pessoal (só o dono usa): dá para usar planos gratuitos que proíbem uso comercial (Vercel Hobby).
+- **Sem banco de dados** (decidido em 14/11/2026). O servidor continua lendo os sites na hora da busca, com o cache
+  de arquivos de sempre. As seções 3.6 (banco) e 3.7 (jobs) e o "coletar ≠ buscar" da 3.1 ficam como ideia para o
+  caso de o app virar produto; não estão no plano.
+- **Tudo na Vercel, num projeto só** ligado ao GitHub: cada push na `main` publica. O app React sai da CDN e a API
+  (Fastify) roda como uma função em São Paulo (`gru1`). Veja "Deploy na Vercel" na seção 4.
 
 Este documento tem quatro partes: o que está hoje, os requisitos, a arquitetura alvo e as mudanças, em fases.
 
@@ -254,7 +259,7 @@ apps/web/src/
 
 ## 4. Mudanças, em fases
 
-Cada fase deixa o app funcionando. As fases 1 e 2 dá para fazer ainda rodando local.
+Cada fase deixa o app funcionando.
 
 ### Fase 1: organizar a base (sem mudar o que o usuário vê)
 - [x] Monorepo com npm workspaces (`apps/web`, `apps/api`, `packages/*`), movendo os arquivos atuais.
@@ -279,40 +284,37 @@ Cada fase deixa o app funcionando. As fases 1 e 2 dá para fazer ainda rodando l
       `styles/app.css` e vai para módulos junto de cada componente quando ele for mexido
 - [x] CI no GitHub Actions (`.github/workflows/ci.yml`): formatação, lint, typecheck, testes e build em todo push/PR
 
-### Fase 2: dados no banco
-- [ ] Neon + PostGIS; Drizzle com migrações versionadas; repositórios em `packages/db`
-- [ ] Worker com os jobs da seção 3.7, chamáveis pela linha de comando
-- [ ] `/listings/search` lendo do banco; tirar a raspagem do caminho da requisição
-- [ ] `/sources` lendo do banco; descoberta vira job
-- [ ] Rede de ônibus, horários, lugares e bairros vindos do banco (não mais do Overpass/EMDEC na hora)
-- [ ] Cache da análise no banco; `data/cache` só em desenvolvimento
-- [ ] Na tela: "visto há 3 h" no card e botão "Atualizar agora"
+### Fase 2: no ar (Vercel)
+- [x] `apps/api/src/vercel.ts`: a mesma API do `app.ts` como função da Vercel (sem abrir porta)
+- [x] `scripts/build-vercel.mjs` gera `.vercel/output` (Build Output API): app estático + função `/api` empacotada
+      com esbuild, `maxDuration` 300 s, streaming ligado, região `gru1`, cache das fontes em `/tmp`
+- [x] `vercel.json` com `npm ci` e `npm run build:vercel`; projeto ligado ao repositório, produção = `main`
+- [ ] Testar no celular (layout em tela pequena) e corrigir o que aparecer
+- [ ] PWA: manifest e ícones para "Adicionar à tela inicial"
+- [ ] Exportar/importar favoritos (o localStorage é por aparelho: é o jeito de levar do computador para o celular)
 
-### Fase 3: no ar
-- [ ] API: `listen` em `0.0.0.0` e `PORT`; build compilado (esbuild/tsup) e `node dist/main.js`; Dockerfile multi-stage
-- [ ] Cloud Run com mínimo 0 instâncias, variáveis de ambiente e segredos. Região: a cota gratuita é calculada
-      sobre o preço de `us-central1`; São Paulo (`southamerica-east1`) responde mais rápido daqui, mas o preço por região
-      muda, então conferir a página de preços antes e pôr um alerta de orçamento de R$ 1 na conta
-- [ ] Vercel: projeto apontando para `apps/web`, `vercel.json` com rewrite de `/api` (ou `VITE_API_URL` + CORS)
-- [ ] Chave de acesso, rate limit, helmet/CSP, Sentry no front e na API
-- [ ] Provedor de tiles com chave (ou Protomaps no R2) e atribuição do OSM no mapa
-- [ ] PWA (manifest, ícones, service worker, tela offline); exportar/importar favoritos
-- [ ] GitHub Actions: deploy da API a cada push na `main`; workflows agendados dos jobs; segredos configurados
-- [ ] Domínio (opcional): `homematch.vercel.app` já serve
-
-### Fase 4: depois (quando precisar)
+### Fase 3: depois (quando precisar)
+- [ ] Provedor de tiles com chave (MapTiler/Stadia) se o uso passar de "uma pessoa": `tile.openstreetmap.org`
+      tolera uso leve com atribuição, não um app com muitos acessos
+- [ ] Chave de acesso ou limite de pedidos, se o endereço deixar de ser só seu
 - [ ] Tempo de ônibus real: OpenTripPlanner/R5 com GTFS (se o operador publicar)
-- [ ] Feeds XML das imobiliárias (formato dos portais), com autorização, como fonte principal
 - [ ] Mais cidades com operador de ônibus cadastrado
-- [ ] Login só se for preciso sincronizar favoritos entre aparelhos
-- [ ] Sair do plano Hobby da Vercel se virar produto (uso comercial exige plano pago)
+- [ ] Banco + coleta em segundo plano (seções 3.6 e 3.7) só se virar produto com muita gente
+
+### Deploy na Vercel
+
+A Vercel roda `npm ci` e `npm run build:vercel` a cada push. O script monta `.vercel/output`, que a Vercel
+publica como está: `static/` na CDN e `functions/api.func` como a função que atende `/api/*`.
+
+Limites do plano Hobby que importam aqui: cada chamada da API pode durar até 5 minutos (a análise e a busca de imóveis
+cabem); o disco da função só aceita escrita em `/tmp` e some quando a instância é desligada, então o cache das fontes
+é refeito de tempos em tempos (a primeira busca depois disso fica um pouco mais lenta).
 
 ### Riscos e como lidar
 
 | Risco | Mitigação |
 |---|---|
 | Portais bloqueiam IPs de nuvem (já acontece com ZAP/VivaReal/OLX) | Fontes ficam como "bloqueado" e o app segue com as outras; priorizar Chaves na Mão, Lopes, imobiliárias e, no futuro, feeds |
-| Site muda o HTML e o parser para de achar anúncios | `parser-canary` diário abre issue; atualizar fixture e parse (regra do projeto) |
-| Limites gratuitos mudarem | Tudo roda em container/Postgres padrão: dá para trocar de provedor sem mudar código |
-| Banco passar de 1 GB | Apagar imóveis inativos há mais de 60 dias e o histórico antigo; ou subir de plano |
-| Cold start do Cloud Run | Rede da cidade em cache no banco e carregada sob demanda; aceitável para uso pessoal |
+| Site muda o HTML e o parser para de achar anúncios | O aviso aparece na busca; atualizar fixture e parse (regra do projeto) |
+| Limites gratuitos mudarem | A API é um Fastify comum (`main.ts` escuta numa porta): dá para levar para Render/Cloud Run sem mudar o código |
+| Função "fria" na Vercel | A primeira chamada depois de um tempo parado leva alguns segundos a mais; aceitável para uso pessoal |

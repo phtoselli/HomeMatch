@@ -40,6 +40,9 @@ Para usar no dia a dia: dois cliques em `HomeMatch.cmd` (Windows) ou `npm run ap
 
 Produção local, passo a passo: `npm run build && npm start` (o servidor entrega o mapa em http://localhost:3333).
 
+No ar: a Vercel publica a cada push na `main` (app na CDN, API como função em São Paulo). Detalhes em
+[docs/arquitetura.md](docs/arquitetura.md#deploy-na-vercel). Favoritos e preferências ficam no navegador de cada aparelho.
+
 ```bash
 npm test           # Vitest (parsers com fixtures reais, modelo de trajeto, grade, rotas da API)
 npm run typecheck  # cada pacote com o próprio tsconfig

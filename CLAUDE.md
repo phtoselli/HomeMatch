@@ -18,7 +18,8 @@ Monorepo (npm workspaces). Plano completo em [docs/arquitetura.md](docs/arquitet
     `core/types.ts`). Registre em `listings/index.ts` e em `portals.ts`.
   - `listings/discovery.ts` acha as imobiliárias da cidade (OSM `office=estate_agent` com site), reconhece a plataforma
     e lê as que publicam schema.org pela extensão genérica (`extensions/agency.ts`, fonte `site:<host>`).
-- `apps/api`: Fastify. `app.ts` monta (testes usam `app.inject`), `main.ts` escuta, `env.ts` valida a configuração,
+- `apps/api`: Fastify. `app.ts` monta (testes usam `app.inject`), `main.ts` escuta, `vercel.ts` é a mesma API como
+  função da Vercel (empacotada por `scripts/build-vercel.mjs`), `env.ts` valida a configuração,
   `routes/` só valida e chama, `services/` orquestra fontes + domínio, `plugins/` (erros, streaming).
   Respostas longas (`/api/analyze`, `/api/listings`, `/api/links`) são **NDJSON** em streaming
   (`progress` / `warning` / `partial` / `result` / `error`).
@@ -46,6 +47,8 @@ Monorepo (npm workspaces). Plano completo em [docs/arquitetura.md](docs/arquitet
 - Regra nova que vale para servidor e app vai para `domain`, com teste. Componente que se repete vai para `shared/ui`.
 - ESM + tsx: imports com extensão `.js` nos pacotes e na API. No Windows use `npm.cmd`/`npx.cmd` se o PowerShell bloquear `npm`.
 - `data/` é cache de conteúdo de terceiros e não vai para o git.
+- Sem banco de dados: o que é da pessoa fica no localStorage; o servidor lê os sites na hora, com cache em arquivo
+  (`/tmp` na Vercel). Nada de estado no servidor que precise sobreviver a um deploy.
 
 ## Comandos
 
@@ -56,4 +59,5 @@ npm run typecheck    # tsc em cada pacote
 npm run lint
 npm run format       # Prettier
 npm run check        # o que o CI roda: lint, tipos, testes e build
+npm run build:vercel # o que a Vercel roda a cada push na main (.vercel/output)
 ```
