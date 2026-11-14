@@ -206,7 +206,12 @@ export function App() {
         params={search.params}
         filters={filters}
         mode={mode}
-        setMode={setMode}
+        setMode={(m) => {
+          // A configuração cobre o painel e o mapa: trocar de modo fecha ela, senão nada muda na tela.
+          setMode(m);
+          setSetupOpen(false);
+          setPickingWork(false);
+        }}
         linksCount={myLinks.length}
         setupOpen={setupOpen}
         onEdit={openSetup}

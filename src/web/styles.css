@@ -440,3 +440,5 @@ details.more > .field + .field, details.more > .grid3 + .field { margin-top: 16p
 /* No celular a lista fica logo abaixo do mapa: o pin destaca o card, e o card abre o detalhe. */
 .preview-body { min-width: 0; }
 @media (max-width: 900px) { .preview { display: none; } }
+/* Textos de ajuda com trechos de código: fluem como parágrafo. */
+.step .hint { display: block; }
