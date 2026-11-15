@@ -13,6 +13,7 @@
     "@homematch/contracts": "*",
     "@homematch/domain": "*",
     "@homematch/sources": "*",
+    "@vercel/functions": "^3.11.3",
     "fastify": "^5.2.1",
     "zod": "^3.25.76"
   }

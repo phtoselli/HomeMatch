@@ -1,5 +1,5 @@
 import type { BBox, Cell, FeatureRequest, LatLng, Poi, Polygon, Region } from "@homematch/contracts";
-import { PointIndex, bboxOf, gridCenters, inMultiPolygon, padBBox } from "../geo.js";
+import { PointIndex, bboxOf, gridCenters, inBBox, inMultiPolygon, padBBox } from "../geo.js";
 import { commuteFrom, genericBusCommute, type BoardingStop } from "../transit/model.js";
 
 export interface GridInput {
@@ -15,7 +15,8 @@ export interface GridInput {
   stops: BoardingStop[];
   places: { lat: number; lng: number; name: string; rank: number }[];
   /** Modo reserva (poucas linhas no OSM): pontos de ônibus da cidade + distância do trabalho ao ponto mais próximo. */
-  fallback?: { busStops: LatLng[]; workStopDistM: number };
+  /** Sem linhas mapeadas: ônibus estimado entre pontos. `intercity` = o trabalho fica em outra cidade. */
+  fallback?: { busStops: LatLng[]; workStopDistM: number; intercity?: boolean };
   /** Mantém também o que passa por pouco (ver AnalyzeRequest.flex). */
   flex?: boolean;
 }
@@ -58,7 +59,15 @@ export function scoreGrid(input: GridInput): GridOutput {
     if (input.boundary && !inMultiPolygon(c, input.boundary)) continue;
     let commute = commuteFrom(c, work, stopIdx, input.maxWalkToStopM);
     if (fbIdx && input.fallback) {
-      const g = genericBusCommute(c, work, fbIdx, input.maxWalkToStopM, input.fallback.workStopDistM);
+      const g = genericBusCommute(
+        c,
+        work,
+        fbIdx,
+        input.maxWalkToStopM,
+        input.fallback.workStopDistM,
+        undefined,
+        input.fallback.intercity,
+      );
       if (g && g.minutes < commute.minutes) commute = g;
     }
     if (commute.minutes > limit) continue;
@@ -150,6 +159,9 @@ export function rankRegions(cells: Cell[], cellSizeM: number): Region[] {
 
 /** Limita a área de análise: bbox da cidade, cortada a um raio razoável em volta do trabalho. */
 export function analysisBBox(cityBBox: BBox, work: LatLng, maxCommuteMin: number): BBox {
+  // Trabalho em outra cidade: o ônibus intermunicipal anda por rodovia e o recorte abaixo poderia sobrar vazio.
+  // A cidade inteira entra; o tempo de trajeto de cada pedaço já descarta o que não dá.
+  if (!inBBox(work, cityBBox)) return cityBBox;
   // Nenhum transporte urbano direto passa de ~35 km/h de média: corta o que é inalcançável.
   const reachM = Math.min(40_000, (maxCommuteMin / 60) * 35_000);
   const around = padBBox({ south: work.lat, north: work.lat, west: work.lng, east: work.lng }, reachM);

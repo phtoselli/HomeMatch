@@ -307,8 +307,11 @@ A Vercel roda `npm ci` e `npm run build:vercel` a cada push. O script monta `.ve
 publica como está: `static/` na CDN e `functions/api.func` como a função que atende `/api/*`.
 
 Limites do plano Hobby que importam aqui: cada chamada da API pode durar até 5 minutos (a análise e a busca de imóveis
-cabem); o disco da função só aceita escrita em `/tmp` e some quando a instância é desligada, então o cache das fontes
-é refeito de tempos em tempos (a primeira busca depois disso fica um pouco mais lenta).
+cabem); o disco da função só aceita escrita em `/tmp` e some quando a instância é desligada. Por isso o `http.ts`
+tem um segundo nível de cache, o Runtime Cache da Vercel (`useSharedCache`, ligado em `vercel.ts`): guarda, compactado,
+o que vale por 1 dia ou mais (OpenStreetMap, endereços, rede de ônibus), até 2 MB por item. Anúncios ficam só no `/tmp`.
+Sem isso, cada sessão começava fria e esperava o Overpass (~30 s por consulta). As consultas ao OSM pedem a cidade
+inteira (não o recorte em volta do trabalho) para a mesma resposta servir a qualquer busca na cidade.
 
 ### Riscos e como lidar
 

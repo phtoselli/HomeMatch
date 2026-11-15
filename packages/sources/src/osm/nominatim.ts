@@ -1,4 +1,5 @@
 import type { BBox, City, LatLng, PlaceResult, Polygon } from "@homematch/contracts";
+import { padBBox } from "@homematch/domain";
 import { DAY, cached, httpJson } from "../http.js";
 
 // Política do Nominatim: no máximo 1 requisição/s e User-Agent identificando o app.
@@ -149,12 +150,39 @@ async function searchAddressOnce(q: string, viewbox?: BBox): Promise<PlaceResult
 }
 
 /** Busca um endereço tentando versões cada vez mais simples até achar algo (no máximo 5 consultas). */
-export async function searchAddress(q: string, viewbox?: BBox): Promise<PlaceResult[]> {
-  for (const v of addressVariants(q).slice(0, 5)) {
+async function searchAddressIn(q: string, viewbox?: BBox, variants = 5): Promise<PlaceResult[]> {
+  for (const v of addressVariants(q).slice(0, variants)) {
     const rows = await searchAddressOnce(v, viewbox);
     if (rows.length) return rows;
   }
   return [];
+}
+
+/** Até onde o trabalho pode estar em volta da cidade escolhida para morar (região metropolitana). */
+export const WORK_REACH_M = 80_000;
+
+const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+const inBox = (p: LatLng, b: BBox) => p.lat >= b.south && p.lat <= b.north && p.lng >= b.west && p.lng <= b.east;
+
+/** Primeiro os resultados da cidade escrita no endereço; depois os de dentro da cidade escolhida; o resto por último. */
+export function rankAddresses(rows: PlaceResult[], q: string, home: BBox): PlaceResult[] {
+  const fq = fold(q);
+  const score = (r: PlaceResult) => (r.city && fq.includes(fold(r.city)) ? 0 : inBox(r, home) ? 1 : 2);
+  return rows
+    .map((r, i) => ({ r, i, s: score(r) }))
+    .sort((a, b) => a.s - b.s || a.i - b.i)
+    .map((x) => x.r);
+}
+
+/**
+ * Endereço do trabalho. Procura primeiro dentro da cidade onde a pessoa quer morar (como foi escrito); se não achar,
+ * na região em volta, porque o trabalho pode ser em outra cidade ("Av. Norte-Sul, 500, Campinas" morando em Cosmópolis).
+ */
+export async function searchAddress(q: string, home?: BBox): Promise<PlaceResult[]> {
+  if (!home) return searchAddressIn(q);
+  const inCity = await searchAddressIn(q, home, 2);
+  if (inCity.length) return inCity;
+  return rankAddresses(await searchAddressIn(q, padBBox(home, WORK_REACH_M)), q, home);
 }
 
 export async function reverse(p: LatLng): Promise<PlaceResult | null> {
@@ -165,7 +193,7 @@ export async function reverse(p: LatLng): Promise<PlaceResult | null> {
 
 /** Geocodifica um endereço livre restrito a uma bbox; null se não achar. */
 export async function geocodeInBox(q: string, box: BBox): Promise<LatLng | null> {
-  const rows = await searchAddress(q, box).catch(() => []);
+  const rows = await searchAddressIn(q, box).catch(() => []);
   const r = rows[0];
   return r ? { lat: r.lat, lng: r.lng } : null;
 }

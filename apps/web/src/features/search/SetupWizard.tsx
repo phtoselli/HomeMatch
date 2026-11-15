@@ -44,7 +44,7 @@ interface Props {
   onClose?: () => void;
 }
 
-const TIMES = [30, 45, 60];
+const TIMES = [30, 45, 60, 90];
 const ROOMS: [number, string][] = [
   [0, "Tanto faz"],
   [1, "1+"],
@@ -126,10 +126,10 @@ export function SetupWizard(p: Props) {
         <div className="qgrid">
           <div className="field q wide">
             <span className="qnum">1</span>
-            <span className="label">Onde você trabalha ou estuda?</span>
+            <span className="label">Em que cidade você quer morar?</span>
             {cityEdit || !p.city ? (
               <SearchBox
-                placeholder="Primeiro a cidade. Ex.: Campinas, e aperte Enter"
+                placeholder="Ex.: Campinas, e aperte Enter"
                 initial={p.city ? `${p.city.name}${p.city.stateCode ? ` - ${p.city.stateCode}` : ""}` : ""}
                 search={api.cities}
                 minChars={2}
@@ -160,10 +160,17 @@ export function SetupWizard(p: Props) {
                 <Spinner small /> Carregando os limites da cidade…
               </p>
             )}
-            {p.city && (
+          </div>
+
+          <div className="field q wide">
+            <span className="qnum">2</span>
+            <span className="label">Onde você trabalha ou estuda?</span>
+            {!p.city ? (
+              <p className="hint">Escolha a cidade acima primeiro.</p>
+            ) : (
               <>
                 <SearchBox
-                  placeholder="Endereço: rua e número, e aperte Enter"
+                  placeholder="Rua e número (e a cidade, se for outra), e aperte Enter"
                   initial={p.work?.label ?? ""}
                   search={(q) => api.geocode(q, p.city?.bbox)}
                   onSelect={p.onWork}
@@ -178,12 +185,15 @@ export function SetupWizard(p: Props) {
                     <Icon name="target" /> {p.work ? "Ajustar no mapa" : "Marcar no mapa"}
                   </button>
                 </div>
+                <span className="hint">
+                  Pode ser em outra cidade da região: escreva o nome dela no fim (ex.: Av. Norte-Sul, 500, Campinas).
+                </span>
               </>
             )}
           </div>
 
           <div className="field q">
-            <span className="qnum">2</span>
+            <span className="qnum">3</span>
             <label className="label" htmlFor="budget">
               Quanto quer pagar por mês?
             </label>
@@ -218,7 +228,7 @@ export function SetupWizard(p: Props) {
           </div>
 
           <fieldset className="field q">
-            <span className="qnum">3</span>
+            <span className="qnum">4</span>
             <legend className="label">Quantos quartos?</legend>
             <div className="chips">
               {ROOMS.map(([n, label]) => (
@@ -237,7 +247,7 @@ export function SetupWizard(p: Props) {
           </fieldset>
 
           <fieldset className="field q">
-            <span className="qnum">4</span>
+            <span className="qnum">5</span>
             <legend className="label">Tempo máximo até o trabalho</legend>
             <div className="chips">
               {TIMES.map((t) => (
@@ -261,7 +271,7 @@ export function SetupWizard(p: Props) {
           </fieldset>
 
           <fieldset className="field q wide">
-            <span className="qnum">5</span>
+            <span className="qnum">6</span>
             <legend className="label">
               O que quer ter perto de casa? <span className="muted">(opcional)</span>
             </legend>
@@ -291,7 +301,7 @@ export function SetupWizard(p: Props) {
           </fieldset>
 
           <fieldset className="field q wide">
-            <span className="qnum">6</span>
+            <span className="qnum">7</span>
             <legend className="label">
               O imóvel precisa ter <span className="muted">(opcional)</span>
             </legend>

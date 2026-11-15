@@ -9,4 +9,4 @@ export { resolveLink } from "./links.js";
 export { discoverSources, portalSources } from "./listings/discovery.js";
 export { searchListings } from "./listings/index.js";
 export { getCity, reverse, searchAddress, searchCities } from "./osm/nominatim.js";
-export { DATA_DIR } from "./http.js";
+export { DATA_DIR, useSharedCache, type SharedCache } from "./http.js";

@@ -125,4 +125,10 @@ describe("analysisBBox", () => {
     expect(b.south).toBeGreaterThan(city.south);
     expect(b.north).toBeLessThan(-23.4);
   });
+
+  it("trabalho em outra cidade: analisa a cidade inteira onde vai morar", () => {
+    const cosmopolis = { south: -22.7, north: -22.55, west: -47.3, east: -47.1 };
+    const campinas = { lat: -22.9, lng: -47.06 };
+    expect(analysisBBox(cosmopolis, campinas, 45)).toEqual(cosmopolis);
+  });
 });

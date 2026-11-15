@@ -37,7 +37,7 @@ Monorepo (npm workspaces). Plano completo em [docs/arquitetura.md](docs/arquitet
 - **Parse puro e testado.** Toda extração de site fica numa função `(html|json) => dados` com teste e
   fixture real em `packages/sources/test/fixtures/`. O `search`/`resolve` só busca e chama o parse.
 - **Toda chamada externa passa por `http.ts`** (`httpFetch`/`cached`): ritmo por host, novas tentativas e cache
-  em `data/cache/`. Nominatim: no máximo 1 req/s e User-Agent do app (`APP_UA`).
+  em `data/cache/` (na Vercel, também no Runtime Cache para o que vale 1 dia ou mais). Nominatim: no máximo 1 req/s e User-Agent do app (`APP_UA`).
 - **Nada de contornar bloqueio.** Se um site exigir captcha/login ou bloquear, o raspador registra o aviso e
   segue com as outras fontes. Não adicionar plugins de "stealth" nem rotação de IP. Extensões leem só páginas
   públicas de busca (nada de API interna do site com Origin/Referer forjados) e o motor respeita o robots.txt.
@@ -61,3 +61,7 @@ npm run format       # Prettier
 npm run check        # o que o CI roda: lint, tipos, testes e build
 npm run build:vercel # o que a Vercel roda a cada push na main (.vercel/output)
 ```
+
+Produção: projeto `home-match` na Vercel (https://home-match-delta.vercel.app), publica a cada push na `main`.
+A pasta está ligada pela CLI (`.vercel/project.json`); no PowerShell use `vercel.cmd` (`vercel.cmd ls`,
+`vercel.cmd logs <url>`, `vercel.cmd env ls`).

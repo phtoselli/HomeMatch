@@ -175,7 +175,17 @@ export function commuteFrom(
  * Estimativa reserva para cidades com poucas linhas mapeadas no OSM: se há ponto de ônibus perto
  * da casa e perto do trabalho, assume um ônibus (talvez com baldeação) em linha quase reta.
  */
-export const GENERIC_BUS = { speedKmh: 15, waitMin: 8, transferSlackMin: 4, detour: 1.35, label: "ônibus (estimado)" };
+export const GENERIC_BUS = {
+  speedKmh: 15,
+  waitMin: 8,
+  transferSlackMin: 4,
+  detour: 1.35,
+  label: "ônibus (estimado)",
+  /** Entre cidades: só o trecho dentro das cidades (somado, em linha reta) anda a 15 km/h; o resto é rodovia. */
+  urbanM: 6000,
+  roadSpeedKmh: 40,
+  roadLabel: "ônibus intermunicipal (estimado)",
+};
 
 export function genericBusCommute(
   from: LatLng,
@@ -184,13 +194,17 @@ export function genericBusCommute(
   maxWalkToStopM: number,
   workStopDistM: number,
   p: TransitParams = DEFAULT_TRANSIT,
+  intercity = false,
 ): Commute | null {
   const near = busStops.nearest(from, maxWalkToStopM);
   if (!near) return null;
   const walk = (m: number) => (m * p.walkDetour) / p.walkSpeedMpm;
-  const ride = (distance(from, work) * GENERIC_BUS.detour) / ((GENERIC_BUS.speedKmh * 1000) / 60);
+  const mpm = (kmh: number) => (kmh * 1000) / 60;
+  const d = distance(from, work);
+  const urban = intercity ? Math.min(d, GENERIC_BUS.urbanM) : d;
+  const ride = GENERIC_BUS.detour * (urban / mpm(GENERIC_BUS.speedKmh) + (d - urban) / mpm(GENERIC_BUS.roadSpeedKmh));
   return {
     minutes: walk(near.dist) + GENERIC_BUS.waitMin + GENERIC_BUS.transferSlackMin + ride + walk(workStopDistM),
-    via: GENERIC_BUS.label,
+    via: intercity ? GENERIC_BUS.roadLabel : GENERIC_BUS.label,
   };
 }

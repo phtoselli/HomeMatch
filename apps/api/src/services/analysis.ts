@@ -4,7 +4,9 @@ import {
   FLEX,
   PointIndex,
   analysisBBox,
+  bboxAround,
   boardingStops,
+  inBBox,
   commuteLimit,
   padBBox,
   rankRegions,
@@ -12,6 +14,7 @@ import {
   type GridInput,
   type ParsedRoute,
 } from "@homematch/domain";
+import type { BBox } from "@homematch/contracts";
 import {
   featureById,
   fetchBusStops,
@@ -25,6 +28,12 @@ import {
 const FEW_ROUTES = 8;
 
 /**
+ * Área pedida ao OpenStreetMap: a cidade inteira com uma margem arredondada (5 km), e não o recorte em volta do
+ * trabalho. Assim a mesma consulta serve para qualquer trabalho e tempo de trajeto e o cache acerta quase sempre.
+ */
+const osmArea = (city: BBox, marginM: number) => padBBox(city, Math.ceil(Math.max(marginM, 1) / 5000) * 5000);
+
+/**
  * Análise das regiões: baixa linhas, lugares e bairros (fontes) e cruza tudo na grade (domínio).
  * Os avisos vão saindo por `emit` enquanto trabalha.
  */
@@ -36,6 +45,19 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
   };
   const bbox = analysisBBox(req.city.bbox, req.work, commuteLimit(req.maxCommuteMin, req.flex));
 
+  const workInCity = inBBox(req.work, req.city.bbox);
+  // Lugares e bairros saem junto com as linhas (o Overpass é lento: melhor esperar uma vez só).
+  const poisPromise = Promise.all(
+    req.features.map(async (f) => {
+      const pad = req.flex ? f.radius * FLEX.radiusFactor : f.radius;
+      return [f.id, await fetchFeaturePois(f.id, osmArea(req.city.bbox, pad))] as const;
+    }),
+  );
+  const placesPromise = fetchPlaceNames(osmArea(req.city.bbox, 2000));
+  // Evita "unhandled rejection" enquanto as linhas ainda estão sendo lidas; o erro é tratado lá embaixo.
+  poisPromise.catch(() => {});
+  placesPromise.catch(() => {});
+
   const op = operatorFor(req.city);
   let routes: ParsedRoute[] = [];
   if (op) {
@@ -44,14 +66,17 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
       warn(`Não deu para ler as linhas de ${op.info.name}: ${(e as Error).message}. Usando o OpenStreetMap.`);
       return [];
     });
+    // Trabalho em outra cidade: as linhas municipais não chegam lá; vale o que o OSM tiver (intermunicipais).
+    if (routes.length && !boardingStops(routes, req.work, DEFAULT_TRANSIT).length) routes = [];
   }
+  const official = routes.length > 0;
   // Com a rede oficial em mãos, não espera o Overpass (lento e muitas vezes lotado).
-  if (!routes.length) {
+  if (!official) {
     emit({ type: "progress", message: "Buscando linhas de ônibus, metrô e trem que passam perto do trabalho…" });
     routes = await fetchRoutesNearWork(req.work, DEFAULT_TRANSIT);
   }
   // Com a rede inteira do operador dá para considerar uma baldeação; com o OSM só há as linhas perto do trabalho.
-  const transfers = !!op && routes.length > 0;
+  const transfers = official;
   const direct = boardingStops(routes, req.work, DEFAULT_TRANSIT);
   const stops = transfers ? boardingStops(routes, req.work, DEFAULT_TRANSIT, { transfers: true }) : direct;
   const usedIds = new Set(stops.map((s) => s.routeId));
@@ -61,23 +86,31 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
   emit({
     type: "progress",
     message:
-      `${nearCount} linhas passam perto do trabalho${op ? ` (fonte: ${op.info.name})` : ""}` +
+      `${nearCount} linhas passam perto do trabalho${official ? ` (fonte: ${op!.info.name})` : ""}` +
       (transfers ? `; com uma baldeação, ${viaCount} linhas levam até lá` : "") +
       ` — ${stops.length} pontos de embarque.`,
   });
   let fallback: GridInput["fallback"];
-  if (nearCount < FEW_ROUTES && !(op && nearCount > 0)) {
+  if (nearCount < FEW_ROUTES && !(official && nearCount > 0)) {
     emit({
       type: "progress",
       message: "Poucas linhas mapeadas no OpenStreetMap aqui; buscando os pontos de ônibus da cidade…",
     });
-    const busStops = await fetchBusStops(bbox).catch(() => []);
+    // Pontos da cidade e, se o trabalho fica em outra cidade, os de perto dele.
+    const [cityStops, workStops] = await Promise.all([
+      fetchBusStops(osmArea(req.city.bbox, 1000)).catch(() => []),
+      workInCity ? [] : fetchBusStops(bboxAround(req.work, 1500)).catch(() => []),
+    ]);
+    const busStops = [...cityStops, ...workStops];
     const workStop = new PointIndex(busStops, 500, req.work.lat).nearest(req.work, DEFAULT_TRANSIT.busWalkAtWorkM);
     if (workStop) {
-      fallback = { busStops, workStopDistM: workStop.dist };
+      fallback = { busStops, workStopDistM: workStop.dist, intercity: !workInCity };
       warn(
         `Só ${nearCount} linha(s) com itinerário no OpenStreetMap perto do trabalho. Para o resto, o tempo é ` +
-          `"ônibus (estimado)": ponto perto de casa + ponto perto do trabalho, em linha quase reta a 15 km/h. ` +
+          (workInCity
+            ? `"ônibus (estimado)": ponto perto de casa + ponto perto do trabalho, em linha quase reta a 15 km/h. `
+            : `"ônibus intermunicipal (estimado)": ponto perto de casa + ponto perto do trabalho, uns 6 km no ritmo ` +
+              `da cidade (15 km/h) e o resto por rodovia (40 km/h). `) +
           `Confira a linha real no modo "Meus links".`,
       );
     } else if (!nearCount) {
@@ -85,16 +118,16 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
     }
   }
 
-  const pois: Record<string, Poi[]> = {};
-  for (const f of req.features) {
-    const def = featureById(f.id);
-    emit({ type: "progress", message: `Mapeando ${def?.label.toLowerCase() ?? f.id} na cidade…` });
-    pois[f.id] = await fetchFeaturePois(f.id, padBBox(bbox, req.flex ? f.radius * FLEX.radiusFactor : f.radius));
-    if (!pois[f.id]!.length) warn(`Nenhum(a) ${def?.label ?? f.id} encontrado(a) no OpenStreetMap nessa área.`);
+  if (req.features.length) {
+    const labels = req.features.map((f) => featureById(f.id)?.label.toLowerCase() ?? f.id);
+    emit({ type: "progress", message: `Mapeando ${labels.join(", ")} e os bairros da cidade…` });
   }
-
-  emit({ type: "progress", message: "Buscando nomes dos bairros…" });
-  const places = await fetchPlaceNames(padBBox(bbox, 2000)).catch((e) => {
+  const pois: Record<string, Poi[]> = Object.fromEntries(await poisPromise);
+  for (const f of req.features) {
+    if (!pois[f.id]!.length)
+      warn(`Nenhum(a) ${featureById(f.id)?.label ?? f.id} encontrado(a) no OpenStreetMap nessa área.`);
+  }
+  const places = await placesPromise.catch((e) => {
     warn(`Não deu para buscar os nomes dos bairros: ${(e as Error).message}`);
     return [];
   });
