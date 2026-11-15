@@ -191,6 +191,14 @@ export async function reverse(p: LatLng): Promise<PlaceResult | null> {
   return "error" in row ? null : toPlace(row);
 }
 
+/** Cidade (município) onde fica um ponto, com o limite. null se o ponto não cai numa cidade. */
+export async function cityAt(p: LatLng): Promise<City | null> {
+  const url = `${BASE}/reverse?format=jsonv2&addressdetails=1&zoom=10&lat=${p.lat.toFixed(5)}&lon=${p.lng.toFixed(5)}`;
+  const row = await cached("nominatim", url, 30 * DAY, () => httpJson<NomRow | { error: string }>(url, OPTS));
+  if ("error" in row || row.osm_type !== "relation") return null;
+  return getCity(`R${row.osm_id}`);
+}
+
 /** Geocodifica um endereço livre restrito a uma bbox; null se não achar. */
 export async function geocodeInBox(q: string, box: BBox): Promise<LatLng | null> {
   const rows = await searchAddressIn(q, box).catch(() => []);

@@ -187,6 +187,13 @@ export const GENERIC_BUS = {
   roadLabel: "ônibus intermunicipal (estimado)",
 };
 
+/** Viagem de ônibus estimada por `d` metros em linha reta; entre cidades, o que passa de `urbanM` é rodovia. */
+export function busRideMin(d: number, intercity: boolean): number {
+  const mpm = (kmh: number) => (kmh * 1000) / 60;
+  const urban = intercity ? Math.min(d, GENERIC_BUS.urbanM) : d;
+  return GENERIC_BUS.detour * (urban / mpm(GENERIC_BUS.speedKmh) + (d - urban) / mpm(GENERIC_BUS.roadSpeedKmh));
+}
+
 export function genericBusCommute(
   from: LatLng,
   work: LatLng,
@@ -199,10 +206,7 @@ export function genericBusCommute(
   const near = busStops.nearest(from, maxWalkToStopM);
   if (!near) return null;
   const walk = (m: number) => (m * p.walkDetour) / p.walkSpeedMpm;
-  const mpm = (kmh: number) => (kmh * 1000) / 60;
-  const d = distance(from, work);
-  const urban = intercity ? Math.min(d, GENERIC_BUS.urbanM) : d;
-  const ride = GENERIC_BUS.detour * (urban / mpm(GENERIC_BUS.speedKmh) + (d - urban) / mpm(GENERIC_BUS.roadSpeedKmh));
+  const ride = busRideMin(distance(from, work), intercity);
   return {
     minutes: walk(near.dist) + GENERIC_BUS.waitMin + GENERIC_BUS.transferSlackMin + ride + walk(workStopDistM),
     via: intercity ? GENERIC_BUS.roadLabel : GENERIC_BUS.label,

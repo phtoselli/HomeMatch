@@ -172,6 +172,7 @@ export function App() {
               settings={mapSettings}
               hasWork={!!work}
               hasAnalysis={!!search.analysis}
+              estimatedLeg={!!search.analysis?.routes.some((r) => r.estimated)}
               busLines={busLines}
               features={chosenDefs}
               chosen={search.chosen}

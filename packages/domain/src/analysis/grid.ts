@@ -1,6 +1,7 @@
 import type { BBox, Cell, FeatureRequest, LatLng, Poi, Polygon, Region } from "@homematch/contracts";
 import { PointIndex, bboxOf, gridCenters, inBBox, inMultiPolygon, padBBox } from "../geo.js";
-import { commuteFrom, genericBusCommute, type BoardingStop } from "../transit/model.js";
+import { commuteFrom, genericBusCommute, type BoardingStop, type Commute } from "../transit/model.js";
+import { hubCommute, type Hub } from "../transit/intercity.js";
 
 export interface GridInput {
   bbox: BBox;
@@ -14,9 +15,13 @@ export interface GridInput {
   pois: Record<string, Poi[]>;
   stops: BoardingStop[];
   places: { lat: number; lng: number; name: string; rank: number }[];
-  /** Modo reserva (poucas linhas no OSM): pontos de ônibus da cidade + distância do trabalho ao ponto mais próximo. */
   /** Sem linhas mapeadas: ônibus estimado entre pontos. `intercity` = o trabalho fica em outra cidade. */
   fallback?: { busStops: LatLng[]; workStopDistM: number; intercity?: boolean };
+  /**
+   * Trabalho em outra cidade sem linha intermunicipal mapeada: terminais de lá (com o caminho até o trabalho).
+   * Com eles, o intermunicipal estimado vai até o terminal (e não até a porta do trabalho). Usa `fallback.busStops`.
+   */
+  hubs?: Hub[];
   /** Mantém também o que passa por pouco (ver AnalyzeRequest.flex). */
   flex?: boolean;
 }
@@ -27,6 +32,8 @@ export interface GridOutput {
   cellsReachable: number;
   /** Quantas das células mantidas atendem a tudo (sem flex, todas). */
   cellsMatching: number;
+  /** Terminais (`Hub.id`) que alguma célula mantida usa. */
+  hubsUsed: string[];
 }
 
 /** Busca flexível: quanto além do pedido ainda entra como "quase lá". */
@@ -47,6 +54,8 @@ export function scoreGrid(input: GridInput): GridOutput {
   );
   const placeIdx = new PointIndex(input.places, 2000, work.lat);
   const fbIdx = input.fallback ? new PointIndex(input.fallback.busStops, 500, work.lat) : null;
+  const hubs = input.hubs ?? [];
+  const hubsUsed = new Set<string>();
 
   const centers = gridCenters(input.bbox, input.cellSizeM);
   const cells: Cell[] = [];
@@ -57,8 +66,11 @@ export function scoreGrid(input: GridInput): GridOutput {
   const reach = (r: number) => (flex ? r * FLEX.radiusFactor : r);
   for (const c of centers) {
     if (input.boundary && !inMultiPolygon(c, input.boundary)) continue;
-    let commute = commuteFrom(c, work, stopIdx, input.maxWalkToStopM);
-    if (fbIdx && input.fallback) {
+    let commute: Commute & { hubId?: string } = commuteFrom(c, work, stopIdx, input.maxWalkToStopM);
+    if (fbIdx && hubs.length) {
+      const h = hubCommute(c, fbIdx, hubs, input.maxWalkToStopM);
+      if (h && h.minutes < commute.minutes) commute = h;
+    } else if (fbIdx && input.fallback) {
       const g = genericBusCommute(
         c,
         work,
@@ -86,6 +98,7 @@ export function scoreGrid(input: GridInput): GridOutput {
     }
     if (misses > (flex ? FLEX.maxMisses : 0)) continue;
     if (!misses) matching++;
+    if (commute.hubId) hubsUsed.add(commute.hubId);
 
     const amenityScore = features.length ? amenity / features.length : 1;
     const commuteScore = Math.max(0, 1 - commute.minutes / input.maxCommuteMin);
@@ -111,7 +124,13 @@ export function scoreGrid(input: GridInput): GridOutput {
       ...(flex ? { misses } : {}),
     });
   }
-  return { cells, cellsTotal: centers.length, cellsReachable: reachable, cellsMatching: matching };
+  return {
+    cells,
+    cellsTotal: centers.length,
+    cellsReachable: reachable,
+    cellsMatching: matching,
+    hubsUsed: [...hubsUsed],
+  };
 }
 
 /** Agrupa as células por bairro e ordena (média das 3 melhores notas). */

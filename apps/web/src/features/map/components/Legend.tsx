@@ -7,6 +7,8 @@ interface Props {
   settings: MapSettings;
   hasWork: boolean;
   hasAnalysis: boolean;
+  /** A análise tem trecho intermunicipal estimado (pontilhado no mapa). */
+  estimatedLeg?: boolean;
   busLines: BusLine[];
   /** Características pedidas (o que a pessoa quer perto) e o raio de cada uma. */
   features: FeatureDef[];
@@ -16,7 +18,7 @@ interface Props {
 const CELL_ENDS = { great: ["ótima", "a melhor"], ok: ["ok", "boa"], both: ["ok", "ótima"] } as const;
 
 /** Legenda do mapa: trabalho, nota das regiões, linhas que a pessoa pôs e lugares pedidos. */
-export function Legend({ settings: s, hasWork, hasAnalysis, busLines, features, chosen }: Props) {
+export function Legend({ settings: s, hasWork, hasAnalysis, estimatedLeg, busLines, features, chosen }: Props) {
   const lineRefs = s.myLines ? [...new Map(busLines.map((l) => [l.ref ?? l.name, l.color])).entries()].slice(0, 3) : [];
   const pois = s.pois ? features.filter((d) => !s.hiddenPois.includes(d.id)) : [];
   const ends = CELL_ENDS[s.cellBand];
@@ -41,6 +43,12 @@ export function Legend({ settings: s, hasWork, hasAnalysis, busLines, features, 
             <span>{ends[0]}</span>
             <span>{ends[1]}</span>
           </span>
+        </span>
+      )}
+      {hasAnalysis && estimatedLeg && s.routes && (
+        <span>
+          <span className="lg-line dotted" />
+          Intermunicipal (estimado)
         </span>
       )}
       {lineRefs.map(([ref, color]) => (

@@ -65,8 +65,26 @@ apps/api/src/
 ├─ env.ts        configuração validada com zod
 ├─ plugins/      erros (status certos) e streaming NDJSON
 ├─ routes/       só validam a entrada (contracts) e chamam o serviço
-└─ services/     análise das regiões e leitura dos links
+└─ services/     análise das regiões (analysis, commute) e leitura dos links
 ```
+
+### Trabalho em outra cidade
+
+Quando o trabalho fica fora do município escolhido (`services/commute.ts`):
+
+1. A cidade do trabalho sai do Nominatim (`cityAt`, com o limite municipal).
+2. Uma consulta ao Overpass (`sources/intercity.ts`) traz as **linhas intermunicipais**: as relações de ônibus, trem
+   ou metrô que param nas duas cidades (conferido pelo limite, porque as bboxes de cidades vizinhas se sobrepõem),
+   os pontos de ônibus da cidade de casa e os terminais/rodoviárias da cidade do trabalho.
+3. A rede da cidade do trabalho entra para a baldeação no destino: o operador oficial quando há (EMDEC em Campinas),
+   senão as linhas do OSM perto do trabalho. O cálculo é o de sempre (`boardingStops` com uma baldeação).
+4. Com poucas intermunicipais mapeadas saindo da cidade de casa, entra a estimativa por terminal (`domain/transit/
+   intercity.ts`): ponto perto de casa → terminal da cidade do trabalho por rodovia → linha municipal (ou a pé) até o
+   trabalho, escolhendo o terminal com o menor tempo. No mapa, esse trecho aparece pontilhado
+   (`TransitRoute.estimated`), junto com a linha municipal real.
+
+Linhas metropolitanas sem dado aberto (a EMTU/Artesp fica atrás de bloqueio anti-robô e não publica GTFS aberto)
+dependem do OpenStreetMap; onde ninguém mapeou, vale a estimativa.
 
 | Método | Rota | O que faz |
 |---|---|---|

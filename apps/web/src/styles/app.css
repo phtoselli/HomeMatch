@@ -1445,6 +1445,11 @@ details.more > .grid3 + .field {
   border-radius: 2px;
   flex: none;
 }
+.lg-line.dotted {
+  height: 5px;
+  border-radius: 0;
+  background: radial-gradient(circle, #495057 2.2px, transparent 2.6px) 0 50% / 7px 100% repeat-x;
+}
 .legend .lg-col {
   flex-direction: column;
   align-items: stretch;

@@ -11,7 +11,8 @@ Monorepo (npm workspaces). Plano completo em [docs/arquitetura.md](docs/arquitet
 - `packages/domain`: regras puras (geo, modelo de trajeto, nota da grade, filtros, "o que não bate", horários).
   Sem rede, disco, React nem zod. Roda igual na API, no navegador e nos testes.
 - `packages/sources`: tudo que vem de fora. `http.ts` (ritmo, cache em `DATA_DIR`), `osm/`, `operators/` (EMDEC),
-  `listings/`, `links.ts`. A API só importa pelo `index.ts` do pacote.
+  `intercity.ts` (linhas intermunicipais do OSM entre duas cidades + terminais), `listings/`, `links.ts`. A API só
+  importa pelo `index.ts` do pacote.
   - `listings/core/engine.ts` é o motor comum (robots.txt, ritmo, cache, bloqueio, paginação, posição no mapa);
     `core/schemaorg.ts` lê anúncios em schema.org (JSON-LD) de qualquer site.
   - `listings/extensions/<site>.ts` tem só o particular de cada site: `url()` da busca + `parse()` puro (contrato em
@@ -20,7 +21,8 @@ Monorepo (npm workspaces). Plano completo em [docs/arquitetura.md](docs/arquitet
     e lê as que publicam schema.org pela extensão genérica (`extensions/agency.ts`, fonte `site:<host>`).
 - `apps/api`: Fastify. `app.ts` monta (testes usam `app.inject`), `main.ts` escuta, `vercel.ts` é a mesma API como
   função da Vercel (empacotada por `scripts/build-vercel.mjs`), `env.ts` valida a configuração,
-  `routes/` só valida e chama, `services/` orquestra fontes + domínio, `plugins/` (erros, streaming).
+  `routes/` só valida e chama, `services/` orquestra fontes + domínio (`commute.ts`: rede de transporte da análise,
+  na mesma cidade ou intermunicipal), `plugins/` (erros, streaming).
   Respostas longas (`/api/analyze`, `/api/listings`, `/api/links`) são **NDJSON** em streaming
   (`progress` / `warning` / `partial` / `result` / `error`).
 - `apps/web`: React 18 + react-leaflet 4. Estrutura completa em [docs/arquitetura.md](docs/arquitetura.md#5-app-react).

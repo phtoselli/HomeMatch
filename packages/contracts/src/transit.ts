@@ -17,6 +17,8 @@ export const transitRouteSchema = z.object({
   path: z.array(latLngTupleSchema),
   /** Traçado pelas ruas (quando a fonte tem), só para desenhar. */
   shape: z.array(z.array(latLngTupleSchema)).optional(),
+  /** Trecho estimado (intermunicipal sem linha mapeada): só liga a cidade ao terminal; o mapa desenha pontilhado. */
+  estimated: z.boolean().optional(),
 });
 export type TransitRoute = z.infer<typeof transitRouteSchema>;
 

@@ -4,6 +4,7 @@ export * from "./format.js";
 export * from "./url.js";
 export * from "./cells.js";
 export * from "./transit/model.js";
+export * from "./transit/intercity.js";
 export * from "./transit/lines.js";
 export * from "./transit/timetable.js";
 export * from "./analysis/grid.js";
