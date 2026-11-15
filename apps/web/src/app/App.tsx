@@ -1,28 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { greatThreshold, summarizeLines, wideFilters } from "@homematch/domain";
-import { useFeatures, useOperator } from "../shared/api/queries";
-import { Icon } from "../shared/ui";
-import { useFavorites } from "../features/favorites/store";
-import { LinksPanel } from "../features/links/LinksPanel";
-import { useLinks } from "../features/links/store";
-import { Legend } from "../features/map/Legend";
-import { MapSettingsPanel } from "../features/map/MapSettingsPanel";
-import { MapView } from "../features/map/MapView";
-import { useMapSettings } from "../features/map/settings";
-import { useMapView } from "../features/map/viewStore";
-import { ListingDetail } from "../features/results/ListingDetail";
-import { PreviewCard } from "../features/results/PreviewCard";
-import { ResultsPanel } from "../features/results/ResultsPanel";
-import { useRanked, useRegionTab } from "../features/results/useRanked";
-import { FilterBar } from "../features/search/FilterBar";
-import { usePlace } from "../features/search/placeStore";
-import { SetupWizard } from "../features/search/SetupWizard";
-import { useSearch } from "../features/search/useSearch";
-import { LinePopover } from "../features/transit/LinePopover";
-import { useLines } from "../features/transit/linesStore";
-import { TimetableModal } from "../features/transit/TimetableModal";
-import { useLineHover } from "../features/transit/useLineHover";
-import { useShell } from "./shellStore";
+import { useFeatures, useOperator } from "@/shared/api/queries";
+import { Icon } from "@/shared/ui";
+import { useFavorites } from "@/features/favorites";
+import { LinksPanel, useLinks } from "@/features/links";
+import { Legend, MapSettingsPanel, MapView, useMapSettings, useMapView } from "@/features/map";
+import { ListingDetail, PreviewCard, ResultsPanel, useRanked, useRegionTab } from "@/features/results";
+import { FilterBar, SetupWizard, usePlace, useSearch } from "@/features/search";
+import { LinePopover, TimetableModal, useLineHover, useLines } from "@/features/transit";
+import { useShell } from "./shell";
 import { TopBar } from "./TopBar";
 
 /** A tela: barra do topo, painel (busca ou links), mapa e o que abre por cima. O estado mora nos stores. */

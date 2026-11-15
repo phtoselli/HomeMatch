@@ -16,7 +16,7 @@ import {
   withBudget,
   type Filters,
 } from "@homematch/domain";
-import { shortVia } from "../src/features/results/ListingBits";
+import { shortVia } from "@/features/results/components/ListingBits";
 
 const base: Listing = {
   id: "x",

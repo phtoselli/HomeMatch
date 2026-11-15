@@ -1,323 +1,199 @@
-# HomeMatch: arquitetura para produção
+# HomeMatch: arquitetura
 
-Objetivo: ter o HomeMatch no ar, funcionando no celular e no computador a qualquer hora, **sem custo**,
-com uma base que aguente crescer (mais cidades, mais fontes, mais pessoas) sem reescrever tudo.
+O HomeMatch é uma aplicação 100% web: um app React que consome a API do próprio projeto. **Não há banco de dados.**
+O que é da pessoa (favoritos, filtros, linhas, última busca) fica no `localStorage` do navegador; a API lê as fontes
+públicas na hora, com cache.
 
-Decisões já tomadas:
-- Favoritos, filtros, linhas e última busca ficam no navegador (localStorage). Sem login.
-- Uso pessoal (só o dono usa): dá para usar planos gratuitos que proíbem uso comercial (Vercel Hobby).
-- **Sem banco de dados** (decidido em 14/11/2026). O servidor continua lendo os sites na hora da busca, com o cache
-  de arquivos de sempre. As seções 3.6 (banco) e 3.7 (jobs) e o "coletar ≠ buscar" da 3.1 ficam como ideia para o
-  caso de o app virar produto; não estão no plano.
-- **Tudo na Vercel, num projeto só** ligado ao GitHub: cada push na `main` publica. O app React sai da CDN e a API
-  (Fastify) roda como uma função em São Paulo (`gru1`). Veja "Deploy na Vercel" na seção 4.
+## 1. Princípios
 
-Este documento tem quatro partes: o que está hoje, os requisitos, a arquitetura alvo e as mudanças, em fases.
+- **Sem banco de dados e sem login.** Preferências e favoritos ficam no aparelho (`localStorage`, chaves
+  `mapa-aluguel:<nome>`). O servidor não guarda nada que precise sobreviver a um deploy.
+- **Custo zero.** Tudo num projeto da Vercel (plano Hobby, uso pessoal e não comercial), ligado ao GitHub: cada push
+  na `main` publica.
+- **Respeito às fontes.** robots.txt, ritmo por host, cache, sem contornar bloqueio, só páginas públicas.
+- **Privacidade.** O endereço do trabalho só passa pela API durante a análise e não é guardado.
 
----
-
-## 1. Como está hoje
-
-| Parte | Hoje | Problema para produção |
-|---|---|---|
-| Estrutura | Um pacote só (`src/server`, `src/web`, `src/shared`), um `tsconfig` para tudo | Servidor enxerga tipos do DOM e o navegador os do Node; nada impede importar código do servidor no front |
-| Tipos | `shared/types.ts` com 29 tipos de domínio, API e streaming misturados; validação zod só no servidor, escrita à mão em `index.ts` | O tipo e a validação podem divergir; o front não valida nada do que recebe |
-| Servidor | `index.ts` com todas as rotas (236 linhas); análise pesada roda dentro da requisição | Uma análise longa trava o processo para todo mundo |
-| Dados | Raspagem e consultas ao OSM **na hora da busca**; cache em arquivos (`data/cache`, 46 MB, sem limite) e em memória | Lento, sujeito a bloqueio; em container o disco some a cada deploy e cada instância tem o seu cache |
-| Front | `App.tsx` com 476 linhas e 27 estados; componentes numa pasta só; um `styles.css` de ~580 linhas | Difícil de manter; botões, chips, modais e popovers repetidos com pequenas diferenças |
-| Qualidade | Vitest (99 testes), `tsc` | Sem lint, sem CI, sem deploy automático, sem monitoramento |
-| Execução | `tsx` (compila na hora), `listen` em `127.0.0.1` | Não roda em container nem atrás de proxy |
-
-O que já está bom e fica: parse puro com fixture real, motor de fontes com extensões, robots.txt respeitado,
-`http.ts` com ritmo por host, zod nas entradas, proteção contra SSRF nos links colados.
-
----
-
-## 2. Requisitos
-
-### 2.1 Funcionais (o que já existe e precisa continuar)
-1. Escolher cidade e endereço do trabalho; achar as regiões que cabem no tempo de ônibus e têm o que a pessoa quer perto.
-2. Listar imóveis de várias fontes com nota, grupos (atende tudo / essencial ok / quase lá / outras) e o que não bate.
-3. Mapa configurável: nota das regiões, linhas uma a uma, lugares, imóveis, legenda.
-4. Linhas de ônibus: popover, grade de horários do operador.
-5. Favoritos no navegador, com filtro Todos/Favoritos.
-6. "Meus links": colar anúncio de qualquer site e ver no mapa.
-7. Descoberta das imobiliárias da cidade.
-
-### 2.2 Novos para produção
-8. **Instalar no celular** (PWA): ícone na tela inicial, abre em tela cheia, funciona com conexão ruim (favoritos e última busca offline).
-9. **Imóveis sempre prontos**: a lista vem do banco em menos de 1 s; a coleta acontece antes, em segundo plano.
-10. **Frescor visível**: cada anúncio mostra quando foi visto pela última vez; anúncio que sumiu da fonte sai da lista.
-11. **Atualizar agora** (opcional): pedir uma coleta da cidade fora do horário, com limite de frequência.
-12. **Acesso restrito** enquanto for pessoal: só quem tem a chave usa a API (evita que alguém use o servidor para raspar em massa).
-13. **Exportar/importar favoritos** (JSON), já que ficam por aparelho.
-
-### 2.3 Não funcionais
-
-| Item | Meta |
-|---|---|
-| Custo | R$ 0/mês nos planos gratuitos |
-| Latência | Lista de imóveis p95 < 500 ms; análise em cache < 2 s; análise nova < 20 s com progresso |
-| Disponibilidade | Melhor esforço; acordar do zero (cold start) em até ~10 s é aceitável |
-| Celular | Layout mobile primeiro; Lighthouse PWA e acessibilidade ≥ 90 |
-| Segurança | HTTPS; chave de acesso; limite por IP; cabeçalhos de segurança (CSP); validação de toda entrada; SSRF bloqueado |
-| Respeito às fontes | robots.txt, ritmo por host, cache, sem contornar bloqueio, só páginas públicas (já é regra do projeto) |
-| Privacidade (LGPD) | Nenhum dado pessoal no servidor (favoritos e endereço do trabalho ficam no aparelho; o endereço só passa pela API na hora da análise e não é guardado) |
-| Observabilidade | Logs estruturados, erros no Sentry, alerta quando uma coleta ou parser falhar |
-| Manutenção | Lint + typecheck + testes no CI; deploy automático a cada push na `main` |
-
----
-
-## 3. Arquitetura alvo
-
-### 3.1 Visão geral
+## 2. Visão geral
 
 ```
- Celular / Desktop (PWA React)
-   favoritos, configurações e última busca no localStorage
-        │ HTTPS
- Vercel (estático + CDN) ── /api/* ──►  API (Fastify, container, Cloud Run)
-                                         • rotas finas: valida (zod) → serviço → resposta
-                                         • análise em worker thread (não trava o processo)
-                                         • só lê do banco; nunca raspa na requisição
-                                              │
-                                    Postgres + PostGIS (Neon)
-                                    imóveis, histórico de preço, rede de ônibus,
-                                    lugares, bairros, fontes, cache, execuções de jobs
-                                              ▲
- Jobs agendados (GitHub Actions cron → `worker`)
-   • coletar imóveis por cidade (a cada 6–12 h)      • rede de ônibus e horários (1x/dia)
-   • lugares e bairros do OSM (1x/semana)            • descoberta de imobiliárias (1x/semana)
-   • teste dos parsers contra o site real (1x/dia) → abre issue/alerta se quebrar
+ Navegador (React + Leaflet)
+   favoritos, filtros, linhas e última busca no localStorage
+        │ HTTPS, mesma origem
+ Vercel
+   ├─ CDN: app estático (apps/web/dist)
+   └─ /api/*: função Node em São Paulo (gru1) = a API Fastify (apps/api)
+          │  cache em dois níveis: /tmp da instância + Runtime Cache da Vercel
+          ▼
+   Fontes públicas: Nominatim, Overpass (OpenStreetMap), EMDEC, portais e sites de imobiliárias
 ```
 
-Princípio central: **coletar ≠ buscar**. A coleta roda em segundo plano, no ritmo de cada site, e grava no banco.
-A busca só consulta o banco. Isso resolve latência, bloqueio, custo e escala de uma vez.
+## 3. Monorepo
 
-### 3.2 Onde hospedar (gratuito)
-
-| Peça | Escolha | Por quê | Alternativa |
-|---|---|---|---|
-| Front (React) | **Vercel Hobby** | Deploy a cada push, preview por PR, CDN, HTTPS. Hobby é só uso pessoal/não comercial (é o caso agora) | Cloudflare Pages, Netlify |
-| API | **Google Cloud Run** | Container, escala a zero, cota gratuita mensal generosa, timeout de requisição longo (bom para NDJSON) | Render free (dorme após 15 min sem uso, ~1 min para acordar, disco efêmero) |
-| Banco | **Neon Free** (Postgres + PostGIS, 1 GB por projeto) | Postgres de verdade com geografia; suficiente para algumas cidades | Supabase Free |
-| Jobs | **GitHub Actions** (cron) rodando `npm run worker -- <job>` | Já está no GitHub; 2.000 min/mês em repositório privado | Cloud Run Jobs + Cloud Scheduler |
-| Mapa (tiles) | Provedor com plano gratuito com chave (MapTiler/Stadia) ou **Protomaps** (arquivo PMTiles no Cloudflare R2) | `tile.openstreetmap.org` não permite uso em app | — |
-| Erros | Sentry (plano gratuito) | Erros do front e da API num lugar só | — |
-
-Por que não colocar a API na Vercel também: funções têm limite de duração (5 min no Hobby), sobem a frio
-a cada pouco tempo e não guardam a rede de ônibus em memória entre chamadas. A análise e o streaming
-ficam mais estáveis num container. Se um dia a análise ficar toda pré-calculada, dá para mover.
-
-Como o front fala com a API: `vercel.json` com `rewrites` de `/api/:path*` para a URL do Cloud Run
-(mesma origem, sem CORS). Se o streaming NDJSON chegar em bloco pelo proxy, o front chama a API direto
-(`VITE_API_URL`) com CORS liberado só para o domínio do app.
-
-### 3.3 Organização do código (monorepo com npm workspaces)
+npm workspaces:
 
 ```
-homematch/
-├─ apps/
-│  ├─ web/          React + Vite + PWA (só UI e estado do navegador)
-│  ├─ api/          Fastify: rotas → serviços → repositórios
-│  └─ worker/       CLI dos jobs (coleta, rede, OSM, descoberta, teste dos parsers)
-├─ packages/
-│  ├─ contracts/    schemas zod da API → tipos TypeScript (fonte única da verdade)
-│  ├─ domain/       regras puras: filtros, nota, "o que não bate", grupos, geo, horários
-│  ├─ sources/      motor de coleta + extensões de sites + operadores de ônibus + clientes OSM
-│  ├─ db/           esquema e migrações (Drizzle), repositórios
-│  └─ config/       tsconfig base, ESLint, Prettier
-└─ docs/
+apps/
+  web/          React 18 + Vite: só interface e estado do navegador
+  api/          Fastify: rotas finas → serviços → fontes e domínio
+packages/
+  contracts/    schemas zod da API e os tipos derivados (uma fonte só); constantes sem zod em /constants
+  domain/       regras puras: geo, trajeto, grade e nota, filtros, "o que não bate", linhas e horários
+  sources/      tudo que vem de fora: http.ts (ritmo, cache, guarda de rede), OSM, operadores, anúncios, links
+docs/
+scripts/        build da Vercel e atalho para rodar no computador
 ```
 
-Regra de dependência (verificada pelo ESLint, `import/no-restricted-paths`):
+Quem pode importar quem (o ESLint barra o resto):
 
 ```
-web ──► contracts, domain
-api ──► contracts, domain, db, sources(só leitura de horários/links)
-worker ──► domain, db, sources
-domain ──► (nada)        contracts ──► zod
+web ──► contracts (só tipos e /constants), domain
+api ──► contracts, domain, sources
+sources ──► contracts, domain
+domain ──► contracts (só tipos e /constants)
+contracts ──► zod
 ```
 
-`domain` é puro (sem rede, sem banco, sem React): roda igual no navegador, na API e nos testes. Hoje
-essas regras estão espalhadas em `web/search.ts`, `shared/filters.ts`, `web/lines.ts`, `web/mapSettings.ts`,
-`server/analysis.ts` (parte pura) e `server/geo.ts`.
+`domain` não usa rede, disco, React nem zod: roda igual na API, no navegador e nos testes.
 
-### 3.4 Tipos TypeScript
-
-1. **Contratos a partir do zod** (`packages/contracts`):
-   ```ts
-   export const ListingSchema = z.object({ id: ListingId, source: SourceId, total: z.number(), /* … */ });
-   export type Listing = z.infer<typeof ListingSchema>;
-   export const SearchListingsRequest = z.object({ cityId: CityId, regions: z.array(RegionRef).max(15), filters: ListingFilters });
-   ```
-   A API valida a entrada com o mesmo schema que gera o tipo; o front usa o tipo e, em desenvolvimento,
-   valida a resposta. Acaba a duplicação entre `shared/types.ts` e os `z.object` de `server/index.ts`.
-2. **Um arquivo por assunto**: `listing.ts`, `city.ts`, `transit.ts`, `analysis.ts`, `sources.ts`, `stream.ts`, `index.ts` reexporta.
-3. **Ids com marca** (branded), para não trocar um pelo outro: `ListingId`, `SourceId`, `LineKey`, `CityId` (`z.string().brand<"ListingId">()`).
-4. **Uniões discriminadas** onde hoje há strings soltas: status de fonte, eventos do stream, "o que não bate" (`Miss`).
-5. **Tipos de domínio ≠ tipos de banco ≠ tipos de API**: o repositório converte a linha do banco em tipo de domínio; a rota converte domínio em resposta. Mudar o banco não quebra o front.
-6. `tsconfig` base mais estrito (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride`) e um `tsconfig` por app (web com DOM, api/worker com Node).
-7. API versionada: `/api/v1/...`. Mudança que quebra vira `v2` enquanto o front antigo ainda estiver em cache no celular (PWA).
-
-### 3.5 API (camadas)
+## 4. API
 
 ```
 apps/api/src/
-├─ main.ts                 sobe o Fastify (0.0.0.0, PORT do ambiente), plugins, rotas
-├─ env.ts                  variáveis de ambiente validadas com zod (falha ao subir se faltar algo)
-├─ plugins/                auth (chave de acesso), rate-limit, helmet/CSP, cors, sentry, errors
-├─ routes/                 cities, analyses, listings, sources, transit, links, health  (só HTTP)
-├─ services/               casos de uso: analyzeRegions, searchListings, getTimetable, resolveLink
-└─ workers/analysis.ts     análise em worker thread (Piscina), com a rede da cidade carregada uma vez
+├─ app.ts        monta o Fastify (os testes usam app.inject)
+├─ main.ts       escuta numa porta (uso local)
+├─ vercel.ts     a mesma API como função da Vercel
+├─ env.ts        configuração validada com zod
+├─ plugins/      erros (status certos) e streaming NDJSON
+├─ routes/       só validam a entrada (contracts) e chamam o serviço
+└─ services/     análise das regiões e leitura dos links
 ```
-
-Endpoints alvo:
 
 | Método | Rota | O que faz |
 |---|---|---|
-| GET | `/api/v1/cities?q=` / `/api/v1/cities/:id` | Busca e limites da cidade (com cache no banco) |
-| POST | `/api/v1/analyses` | Regiões para (cidade, trabalho, parâmetros). NDJSON com progresso; cache por (cidade, trabalho arredondado a ~200 m, parâmetros) |
-| POST | `/api/v1/listings/search` | Imóveis do banco nas regiões, com filtros largos; resposta JSON paginada |
-| GET | `/api/v1/sources?cityId=` | Fontes e imobiliárias da cidade (do banco, preenchido pelo job de descoberta) |
-| POST | `/api/v1/cities/:id/refresh` | Pede coleta agora (limite: 1 a cada 30 min por cidade) |
-| GET | `/api/v1/transit/lines?cityId=&q=` / `…/lines/:key/timetable` | Linhas e horários |
-| POST | `/api/v1/links/resolve` | "Meus links" (continua lendo a página na hora, com SSRF bloqueado) |
-| GET | `/api/v1/health` | Saúde + versão + idade da última coleta por cidade |
+| GET | `/api/health` | Saúde |
+| GET | `/api/cities?q=` · `/api/city/:osmId` | Busca de cidade e limites (Nominatim) |
+| GET | `/api/geocode?q=` · `/api/reverse?lat=&lng=` | Endereço do trabalho |
+| GET | `/api/features` | Características que dá para pedir (mercado, parque…) |
+| GET | `/api/sources?cityId=` | Portais e imobiliárias da cidade, e se dá para ler cada uma |
+| POST | `/api/analyze` | Regiões que cabem no trajeto e têm o que a pessoa quer perto (NDJSON) |
+| POST | `/api/listings` | Imóveis nas regiões escolhidas (NDJSON) |
+| POST | `/api/links` | "Meus links": anúncios colados no mapa (NDJSON) |
+| GET | `/api/transit/operator` · `/api/bus` · `/api/bus/near` · `/api/bus/timetable` | Linhas de ônibus e horários |
 
-### 3.6 Banco (Postgres + PostGIS)
+Respostas longas saem em **NDJSON** (`progress` / `warning` / `partial` / `result` / `error`): a tela mostra o
+andamento de buscas que levam minutos.
 
-| Tabela | Conteúdo | Índices |
-|---|---|---|
-| `cities` | id OSM, nome, UF, bbox, limite (`geometry`), operador de ônibus | GIST(limite) |
-| `sources` | portal ou imobiliária, cidade, status (ok/robots/bloqueado/sem-dados), plataforma, última verificação | (city_id) |
-| `listings` | id `fonte:id`, fonte, cidade, URL, tipo, aluguel, condomínio, IPTU, total, área, quartos, banheiros, vagas, comodidades `text[]`, bairro, endereço, `geom point`, aproximado, foto, imobiliária, `first_seen`, `last_seen`, `active` | GIST(geom), (city_id, active, total), (source_id) |
-| `listing_prices` | histórico de preço (listing_id, visto_em, total) | (listing_id, visto_em) |
-| `transit_routes` / `transit_stops` | rede por operador: linha, sentido, traçado, paradas em ordem | GIST, (operator, ref) |
-| `timetables` | grade por linha (JSON) e quando foi lida | (operator, ref) |
-| `pois` / `places` | mercados, parques… e nomes de bairros, do extrato OSM | GIST(geom), (city_id, feature) |
-| `analysis_cache` | resultado da análise por chave (cidade, trabalho, parâmetros) | (key), expira em 7 dias |
-| `job_runs` | job, cidade, início, fim, status, números, erro | (job, city_id, started_at) |
+## 5. App React
 
-1 GB do Neon comporta folgado algumas cidades (um imóvel ≈ 1 KB; 50 mil imóveis ≈ 50 MB).
-O cache em arquivos (`data/cache`) deixa de existir em produção: o que é dado vai para tabelas; o que é
-só memória de requisição vira LRU em memória com limite.
-
-### 3.7 Jobs (worker)
-
-| Job | Quando | O que faz |
-|---|---|---|
-| `ingest-listings --city` | a cada 6–12 h por cidade ativa | roda o motor de fontes para as regiões da cidade (bairros), faz upsert em `listings`, grava histórico de preço, marca `active=false` o que não apareceu em 2 coletas |
-| `transit-network --operator` | 1x/dia | baixa a rede (EMDEC) para `transit_routes/stops` |
-| `timetables --operator` | 1x/dia | grades das linhas usadas |
-| `osm-extract --city` | 1x/semana | lugares (mercados, parques…) e bairros a partir do extrato OSM do estado (Geofabrik), sem depender do Overpass público |
-| `discover-agencies --city` | 1x/semana | imobiliárias da cidade e se dá para ler |
-| `parser-canary` | 1x/dia | baixa 1 página real de cada fonte e roda o parse; se vier vazio ou quebrar, abre uma issue no GitHub |
-
-Cada job: idempotente, registra em `job_runs`, respeita robots.txt e ritmo (o motor atual já faz isso),
-e termina com código de erro se falhar (o GitHub Actions avisa por e-mail).
-
-### 3.8 Front (React)
+Organizado por funcionalidade. Cada pasta de `features/` é uma fatia vertical (tela, estado e hooks daquele
+assunto) e só é usada por fora pelo seu `index.ts`.
 
 ```
 apps/web/src/
-├─ app/            App (só layout), providers (QueryClient, tema), rotas se houver
+├─ main.tsx              ponto de entrada (estilos globais, Providers, App)
+├─ app/                  composição da tela
+│  ├─ App.tsx            layout: barra do topo, painel, mapa e o que abre por cima
+│  ├─ Providers.tsx      QueryClient (TanStack Query)
+│  ├─ TopBar.tsx
+│  └─ shell.ts           modo (explorar/links) e abertura da configuração
 ├─ features/
-│  ├─ search/      SetupWizard, FilterBar, store da busca, useAnalysis (stream)
-│  ├─ results/     ResultsPanel, ListingCard, TierSection, EmptyState de resultados
-│  ├─ listing/     ListingDetail, PreviewCard
-│  ├─ map/         MapView e camadas (Cells, Pois, Routes, Listings), MapSettingsPanel, Legend
-│  ├─ transit/     LinePopover, TimetableModal, linhas (summarize, horários)
-│  ├─ favorites/   store (persistida), FavButton, FavoritesList, exportar/importar
-│  ├─ sources/     SourcesPicker
-│  └─ links/       LinksPanel
-├─ shared/
-│  ├─ ui/          Button, IconButton, Chip, Segmented, Switch, Pill, Badge, Card, Modal,
-│  │               Popover, EmptyState, Spinner, Alert, Field, MoneyInput, Icon
-│  ├─ api/         cliente HTTP tipado (contracts) + leitor de NDJSON
-│  ├─ lib/         format, storage seguro (try/catch), datas
-│  └─ styles/      tokens.css (cores, espaços, raios, sombras, tipografia), reset
-└─ main.tsx
+│  ├─ search/            cidade, trabalho, critérios e fontes
+│  │  ├─ components/     SetupWizard, FilterBar, SearchBox, SourcesPicker
+│  │  ├─ hooks/          useSearch (análise e imóveis em streaming)
+│  │  ├─ model/          stores: search (critérios), place (cidade e trabalho)
+│  │  └─ index.ts        API pública
+│  ├─ results/           lista, detalhe e prévia dos imóveis (components/, hooks/useRanked)
+│  ├─ map/               mapa
+│  │  ├─ components/     MapView, Legend, MapSettingsPanel
+│  │  ├─ layers/         uma camada por arquivo (Cells, Pois, Routes, BusLines, ListingMarkers…)
+│  │  ├─ hooks/          useLayer (camada imperativa em canvas)
+│  │  ├─ lib/            utilitários do Leaflet (escape de HTML, destaque de linha)
+│  │  ├─ model/          stores: settings (camadas visíveis), view (área visível)
+│  │  └─ types.ts
+│  ├─ transit/           linhas de ônibus: popover, grade de horários, store das linhas
+│  ├─ links/             "Meus links": painel e store
+│  └─ favorites/         store dos favoritos
+├─ shared/               genérico, sem regra de negócio e sem saber das features
+│  ├─ ui/                Modal, Switch, Segmented, Spinner, ExternalLink, Photo, Icon… (CSS Modules)
+│  ├─ api/               cliente HTTP tipado, leitor de NDJSON, leituras com TanStack Query
+│  ├─ hooks/             useEscape
+│  └─ lib/               persist (localStorage), format
+└─ styles/               tokens.css (cores, espaços, tipografia) e app.css
 ```
 
-- **Estado**: tirar os 27 `useState` do `App` para stores por feature (Zustand com `persist` para o que vai ao localStorage: favoritos, configurações do mapa, filtros). O `App` só monta o layout.
-- **Dados do servidor**: TanStack Query (cache, novas tentativas, carregando/erro iguais em toda tela). O stream da análise vira um hook próprio.
-- **Componentes reutilizáveis** (`shared/ui`): hoje há o mesmo padrão escrito várias vezes (chips em FilterBar, SetupWizard e MapSettingsPanel; modal no detalhe e na grade de horários; popovers; interruptores). Cada primitivo tem variantes por prop (`<Button variant="primary" size="sm">`), acessibilidade embutida (foco, Esc, `aria-*`) e um teste.
-- **Estilos**: os tokens que já existem em `:root` viram `tokens.css`; cada componente tem seu CSS Module ao lado (`Button.module.css`). O `styles.css` único some aos poucos.
-- **PWA**: `vite-plugin-pwa` com manifest, ícones, service worker (cache do app shell e dos tiles vistos), tela de "sem conexão" que ainda mostra os favoritos.
-- **Testes de UI**: Testing Library para os componentes de `shared/ui` e os fluxos principais (favoritar, filtro Todos/Favoritos, ligar/desligar linha).
+Regras (verificadas pelo ESLint em `eslint.config.js`):
 
-### 3.9 Segurança
+- **API pública por funcionalidade:** de fora, `import { MapView } from "@/features/map"`; nunca
+  `@/features/map/components/MapView`.
+- **Dentro da funcionalidade, caminho relativo**; fora dela, o alias `@/` (`@/shared/ui`, `@/features/x`).
+- **`shared/` não depende de `features/` nem de `app/`**, e as funcionalidades não dependem de `app/`.
+- **Contratos só como tipo no navegador:** `import type` de `@homematch/contracts`; valores em
+  `@homematch/contracts/constants`. Assim o zod não vai para o pacote do app.
+- **Estado:** um store Zustand por assunto em `model/`; o que vai ao `localStorage` passa por `shared/lib/persist.ts`
+  (as chaves não mudam entre versões: ninguém perde favoritos). Leituras da API com TanStack Query.
+- **Links externos** só com `<ExternalLink>` (aceita apenas `http(s)`); fotos com `<Photo>`.
+- **Camadas grandes do mapa** (células, lugares, linhas) desenhadas de forma imperativa com `useLayer`, em canvas.
 
-- Chave de acesso: `APP_ACCESS_KEY` no servidor; o app pede uma vez e guarda no aparelho; a API recusa sem ela (exceto `/health`). Simples, sem login, suficiente para uso pessoal.
-- `@fastify/rate-limit` por IP (ex.: 60 req/min; análise e "atualizar agora" bem mais baixo).
-- `@fastify/helmet` com CSP (só os domínios de tiles, imagens dos portais e a API).
-- Links colados: manter `assertPublicUrl` (sem rede local) e limitar tamanho da página.
-- Segredos só em variáveis de ambiente (Vercel, Cloud Run, GitHub Actions secrets); nada no repositório.
+Nova funcionalidade: crie `features/<nome>/` com as subpastas de que precisar (`components/`, `hooks/`, `model/`,
+`lib/`) e um `index.ts` exportando só o que outras partes usam.
 
----
+## 6. Cache
 
-## 4. Mudanças, em fases
+Toda chamada externa passa por `packages/sources/src/http.ts`:
 
-Cada fase deixa o app funcionando.
+1. **Disco local** (`data/cache/` no computador, `/tmp/homematch` na Vercel), por namespace e validade
+   (OSM 7 dias, endereços 30 dias, anúncios 6 h).
+2. **Runtime Cache da Vercel** (`useSharedCache`, ligado em `vercel.ts`) para o que vale 1 dia ou mais (OSM,
+   endereços, rede de ônibus), compactado, até 2 MB por item. É cache, não banco: se falhar ou a cota acabar,
+   o app segue mais devagar. Anúncios ficam só no disco local.
 
-### Fase 1: organizar a base (sem mudar o que o usuário vê)
-- [x] Monorepo com npm workspaces (`apps/web`, `apps/api`, `packages/*`), movendo os arquivos atuais.
-      `apps/worker` nasce na fase 2, junto com os jobs (antes disso não teria o que rodar)
-- [x] `tsconfig` base estrito (`noUncheckedIndexedAccess`, `verbatimModuleSyntax`…) + um por pacote; ESLint com as
-      setas entre pacotes (`no-restricted-imports`) + Prettier
-- [x] `packages/contracts`: schemas zod por assunto (geo, place, features, transit, analysis, listings, stream) e os
-      tipos com `z.infer`; a API valida com os mesmos schemas. Ids com marca ficaram para depois: hoje os ids são
-      montados em muitos pontos (`site:<host>`, `emdec:353:1`) e a marca pediria conversão em todos; os formatos
-      que importam são validados por regex no contrato (`osmIdSchema`, `timetableIdSchema`)
-- [x] `packages/domain`: geo, modelo de trajeto, grade e nota das regiões, filtros, "o que não bate", grupos,
-      diagnóstico, linhas e horários, com os testes
-- [x] `packages/sources`: motor, extensões, EMDEC, clientes OSM, links; cache em `DATA_DIR` (não depende mais da pasta
-      de onde o app sobe)
-- [x] API em camadas (`app.ts`, `main.ts`, `env.ts`, `routes/`, `services/`, `plugins/`), com testes por `app.inject`.
-      Análise em worker thread fica para a fase 2: hoje quase todo o tempo dela é rede (Overpass, EMDEC); com os
-      dados no banco o cálculo vira a parte pesada e aí compensa tirar da thread principal
-- [x] Front por features (`search`, `results`, `favorites`, `map`, `transit`, `links`); `shared/ui` (Modal, Switch,
-      Segmented, Spinner, CloseButton, ErrorAlert, Icon, Photo); stores Zustand no lugar dos 27 `useState` do `App.tsx`
-      (mesmas chaves do localStorage: ninguém perde favoritos); TanStack Query para as leituras simples (características,
-      fontes, operador, horários); tokens em `styles/tokens.css` e CSS Modules nos primitivos. O CSS das telas segue em
-      `styles/app.css` e vai para módulos junto de cada componente quando ele for mexido
-- [x] CI no GitHub Actions (`.github/workflows/ci.yml`): formatação, lint, typecheck, testes e build em todo push/PR
+As consultas ao OpenStreetMap pedem a cidade inteira (não o recorte em volta do trabalho): a mesma resposta serve a
+qualquer busca na cidade e o cache acerta quase sempre.
 
-### Fase 2: no ar (Vercel)
-- [x] `apps/api/src/vercel.ts`: a mesma API do `app.ts` como função da Vercel (sem abrir porta)
-- [x] `scripts/build-vercel.mjs` gera `.vercel/output` (Build Output API): app estático + função `/api` empacotada
-      com esbuild, `maxDuration` 300 s, streaming ligado, região `gru1`, cache das fontes em `/tmp`
-- [x] `vercel.json` com `npm ci` e `npm run build:vercel`; projeto ligado ao repositório, produção = `main`
+## 7. Segurança
+
+- **Rede (SSRF):** `packages/sources/src/net.ts`. Toda chamada do servidor só fala com endereços públicos: o texto
+  da URL é conferido e o IP é conferido na hora da conexão (agente do undici com `lookup` próprio), o que barra
+  DNS rebinding. Vale para links colados, sites de imobiliárias e de operadores vindos do OpenStreetMap e cada
+  redirecionamento.
+- **Links colados:** só `http(s)`, até 5 redirecionamentos, página de até 5 MB e só HTML/texto.
+- **XSS:** `safeExternalUrl` (domain) filtra links de fora antes de virarem `href`/`src`; o app usa
+  `<ExternalLink>` e `<Photo>`. Tooltips do Leaflet escapam todo texto de fora. CSP só com scripts do próprio app.
+- **Cabeçalhos** (em `scripts/build-vercel.mjs`): CSP, `X-Content-Type-Options`, `X-Frame-Options`,
+  `Referrer-Policy`, `Permissions-Policy`, HSTS.
+- **Entradas:** zod em toda rota, coordenadas e textos com limites, corpo de até 2 MB.
+- **Overpass:** texto do usuário entra nas consultas sempre escapado.
+- **Dependências:** `npm audit` (produção, nível alto) no CI.
+
+## 8. Deploy na Vercel
+
+A Vercel roda `npm ci` e `npm run build:vercel` a cada push na `main`. O script `scripts/build-vercel.mjs` monta
+`.vercel/output` (Build Output API), que a Vercel publica como está: `static/` na CDN e `functions/api.func` (a API
+inteira num arquivo, via esbuild) atendendo `/api/*`, com streaming, `maxDuration` de 300 s e região `gru1`.
+
+Limites do plano Hobby que importam: cada chamada da API pode durar até 5 minutos (análise e busca de imóveis cabem);
+o disco da função só aceita escrita em `/tmp` e some quando a instância é desligada (daí o segundo nível de cache).
+
+Para rodar fora da Vercel, a API é um Fastify comum (`main.ts` escuta numa porta, `npm run app` entrega o app junto).
+
+## 9. Próximos passos
+
 - [ ] Testar no celular (layout em tela pequena) e corrigir o que aparecer
 - [ ] PWA: manifest e ícones para "Adicionar à tela inicial"
-- [ ] Exportar/importar favoritos (o localStorage é por aparelho: é o jeito de levar do computador para o celular)
+- [ ] Exportar/importar favoritos em JSON (o `localStorage` é por aparelho: é o jeito de levar do computador para o
+      celular)
+- [ ] Quebrar os componentes grandes (`ResultsPanel`, `SetupWizard`, `ListingDetail`) em peças menores e levar o CSS
+      de cada um de `styles/app.css` para um CSS Module ao lado
+- [ ] Limite de pedidos por IP (Vercel Firewall) se o endereço deixar de ser só de quem mantém o projeto
+- [ ] Provedor de tiles com chave (MapTiler/Stadia) se o uso crescer: `tile.openstreetmap.org` tolera uso leve
+- [ ] Tempo de ônibus real com GTFS (se o operador publicar) e mais cidades com operador cadastrado
 
-### Fase 3: depois (quando precisar)
-- [ ] Provedor de tiles com chave (MapTiler/Stadia) se o uso passar de "uma pessoa": `tile.openstreetmap.org`
-      tolera uso leve com atribuição, não um app com muitos acessos
-- [ ] Chave de acesso ou limite de pedidos, se o endereço deixar de ser só seu
-- [ ] Tempo de ônibus real: OpenTripPlanner/R5 com GTFS (se o operador publicar)
-- [ ] Mais cidades com operador de ônibus cadastrado
-- [ ] Banco + coleta em segundo plano (seções 3.6 e 3.7) só se virar produto com muita gente
+## 10. Riscos
 
-### Deploy na Vercel
-
-A Vercel roda `npm ci` e `npm run build:vercel` a cada push. O script monta `.vercel/output`, que a Vercel
-publica como está: `static/` na CDN e `functions/api.func` como a função que atende `/api/*`.
-
-Limites do plano Hobby que importam aqui: cada chamada da API pode durar até 5 minutos (a análise e a busca de imóveis
-cabem); o disco da função só aceita escrita em `/tmp` e some quando a instância é desligada. Por isso o `http.ts`
-tem um segundo nível de cache, o Runtime Cache da Vercel (`useSharedCache`, ligado em `vercel.ts`): guarda, compactado,
-o que vale por 1 dia ou mais (OpenStreetMap, endereços, rede de ônibus), até 2 MB por item. Anúncios ficam só no `/tmp`.
-Sem isso, cada sessão começava fria e esperava o Overpass (~30 s por consulta). As consultas ao OSM pedem a cidade
-inteira (não o recorte em volta do trabalho) para a mesma resposta servir a qualquer busca na cidade.
-
-### Riscos e como lidar
-
-| Risco | Mitigação |
+| Risco | Como lidar |
 |---|---|
-| Portais bloqueiam IPs de nuvem (já acontece com ZAP/VivaReal/OLX) | Fontes ficam como "bloqueado" e o app segue com as outras; priorizar Chaves na Mão, Lopes, imobiliárias e, no futuro, feeds |
-| Site muda o HTML e o parser para de achar anúncios | O aviso aparece na busca; atualizar fixture e parse (regra do projeto) |
-| Limites gratuitos mudarem | A API é um Fastify comum (`main.ts` escuta numa porta): dá para levar para Render/Cloud Run sem mudar o código |
-| Função "fria" na Vercel | A primeira chamada depois de um tempo parado leva alguns segundos a mais; aceitável para uso pessoal |
+| Portais bloqueiam IPs de nuvem (já acontece com ZAP/VivaReal/OLX) | A fonte aparece como "bloqueada" e o app segue com as outras |
+| Site muda o HTML e o parser para de achar anúncios | O aviso aparece na busca; atualizar fixture e parse |
+| Overpass público lento ou fora do ar | Cache em dois níveis e servidores alternativos em `osm/overpass.ts` |
+| Limites gratuitos mudarem | A API é um Fastify comum: dá para levar para outro serviço sem mudar o código |
+| Função "fria" na Vercel | A primeira chamada depois de um tempo parado leva alguns segundos a mais |

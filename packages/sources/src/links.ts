@@ -1,10 +1,9 @@
 import { createHash } from "node:crypto";
-import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
 import { parseHTML } from "linkedom";
 import type { BBox, LatLng, Listing, ListingSource } from "@homematch/contracts";
-import { padBBox } from "@homematch/domain";
-import { BROWSER_UA, HOUR, cached, httpFetch } from "./http.js";
+import { padBBox, safeExternalUrl } from "@homematch/domain";
+import { BROWSER_UA, HOUR, cached, httpFetch, readTextLimited } from "./http.js";
+import { assertPublicUrl } from "./net.js";
 import { detectAmenities, firstInt, normalizeType, parseBRL } from "./listings/normalize.js";
 import { geocodeInBox, searchAddress } from "./osm/nominatim.js";
 
@@ -128,7 +127,7 @@ export function extractListingInfo(html: string, pageUrl: string): ExtractedInfo
   if (desc) descriptions.push(desc);
   if (descriptions.length) info.amenities = detectAmenities(`${info.title ?? ""}\n${descriptions.join("\n")}`);
   info.image ??= meta("og:image");
-  if (info.image) info.image = new URL(info.image, pageUrl).toString();
+  info.image = safeExternalUrl(info.image, pageUrl);
 
   // QuintoAndar: o estado da página traz condomínio e custo total ao lado do aluguel.
   if (info.rent) {
@@ -194,71 +193,16 @@ function listingId(url: string, src: ListingSource): string {
     .slice(0, 12)}`;
 }
 
-/** Endereço IP de rede local, loopback, link-local, CGNAT, multicast ou não roteável. */
-export function isPrivateAddress(ip: string): boolean {
-  const h = ip.replace(/^\[|\]$/g, "").toLowerCase();
-  if (isIP(h) === 4) {
-    const [a, b] = h.split(".").map(Number) as [number, number];
-    return (
-      a === 0 ||
-      a === 10 ||
-      a === 127 ||
-      a >= 224 ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      (a === 100 && b >= 64 && b <= 127)
-    );
-  }
-  if (isIP(h) === 6) {
-    if (h === "::" || h === "::1") return true;
-    // IPv4 embutido no IPv6 (::ffff:127.0.0.1, que o URL normaliza para ::ffff:7f00:1)
-    const dotted = h.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-    if (dotted) return isPrivateAddress(dotted[1]!);
-    const hex = h.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
-    if (hex) {
-      const hi = parseInt(hex[1]!, 16);
-      const lo = parseInt(hex[2]!, 16);
-      return isPrivateAddress([hi >> 8, hi & 255, lo >> 8, lo & 255].join("."));
-    }
-    return /^(fc|fd|fe[89ab]|ff)/.test(h);
-  }
-  return false;
-}
-
-/** Só http(s) e nada de rede local (checagem do texto; o DNS é conferido ao baixar). */
-export function assertPublicUrl(raw: string): URL {
-  const u = new URL(raw.trim());
-  if (!/^https?:$/.test(u.protocol)) throw new Error("Use um link http(s)");
-  const h = u.hostname.toLowerCase();
-  if (
-    h === "localhost" ||
-    h.endsWith(".localhost") ||
-    h.endsWith(".local") ||
-    h.endsWith(".internal") ||
-    isPrivateAddress(h)
-  ) {
-    throw new Error("Link de rede local não é permitido");
-  }
-  return u;
-}
-
-/** O nome resolve para algum IP de rede local? (ex.: 127.0.0.1.nip.io) */
-async function assertPublicHost(u: URL): Promise<void> {
-  const host = u.hostname.replace(/^\[|\]$/g, "");
-  if (isIP(host)) return; // IP literal já foi conferido em assertPublicUrl
-  const addrs = await lookup(host, { all: true });
-  if (addrs.some((a) => isPrivateAddress(a.address))) throw new Error("Link de rede local não é permitido");
-}
+/** Página de anúncio maior que isso não é anúncio (ou é um arquivo colado por engano). */
+const MAX_PAGE_BYTES = 5_000_000;
 
 /**
- * Baixa uma URL colada pelo usuário seguindo os redirecionamentos um a um e
- * conferindo cada destino (texto e DNS), para nunca chegar à rede local.
+ * Baixa uma URL colada pelo usuário seguindo os redirecionamentos um a um, conferindo cada destino. O IP de cada
+ * conexão é conferido pelo `httpFetch` (`net.ts`), então nenhum caminho chega à rede local.
  */
 async function fetchPublic(raw: string, maxRedirects = 5): Promise<{ res: Response; finalUrl: string }> {
   let url = assertPublicUrl(raw);
   for (let hop = 0; ; hop++) {
-    await assertPublicHost(url);
     const res = await httpFetch(url.toString(), {
       minIntervalMs: 1500,
       retries: 1,
@@ -267,6 +211,7 @@ async function fetchPublic(raw: string, maxRedirects = 5): Promise<{ res: Respon
     });
     const loc = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
     if (!loc) return { res, finalUrl: url.toString() };
+    await res.body?.cancel();
     if (hop >= maxRedirects) throw new Error("redirecionamentos demais");
     url = assertPublicUrl(new URL(loc, url).toString());
   }
@@ -281,7 +226,10 @@ export async function resolveLink(rawUrl: string, cityBox?: BBox): Promise<Listi
     page = await cached("links", url, 12 * HOUR, async () => {
       const { res, finalUrl } = await fetchPublic(url);
       if (!res.ok) throw new Error(`o site respondeu ${res.status}`);
-      return { finalUrl, html: await res.text() };
+      const type = res.headers.get("content-type") ?? "";
+      if (type && !/html|xml|text\/plain/i.test(type))
+        throw new Error(`o link não é uma página (${type.split(";")[0]})`);
+      return { finalUrl, html: await readTextLimited(res, MAX_PAGE_BYTES) };
     });
     info = extractListingInfo(page.html, page.finalUrl);
   } catch (e) {

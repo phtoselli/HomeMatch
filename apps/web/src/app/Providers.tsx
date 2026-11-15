@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { queryClient } from "../shared/api/queries";
+import { queryClient } from "@/shared/api/queries";
 
 /** O que envolve o app inteiro (cache das leituras da API). */
 export function Providers({ children }: { children: ReactNode }) {

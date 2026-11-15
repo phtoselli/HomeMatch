@@ -1,7 +1,9 @@
 # HomeMatch
 
-Aplicação local (mapa + servidor) para achar aluguel com base no **trabalho**, no **transporte
-público** e no que você quer ter **perto de casa**.
+Aplicação web (React + mapa) para achar aluguel com base no **trabalho**, no **transporte público** e no que você
+quer ter **perto de casa**. Sem banco de dados e sem login: favoritos e preferências ficam no navegador.
+
+Código aberto para uso **não comercial** ([PolyForm Noncommercial 1.0.0](LICENSE)).
 
 Dois modos:
 
@@ -60,7 +62,7 @@ Monorepo com npm workspaces (arquitetura e próximos passos em [docs/arquitetura
 | `packages/domain` | Regras puras: geo, modelo de trajeto, nota da grade, filtros, "o que não bate", horários |
 | `packages/sources` | Tudo que vem de fora: OSM, operador de ônibus, portais e imobiliárias, links colados |
 | `apps/api` | Fastify em camadas: `routes/`, `services/`, `plugins/`, `env.ts` |
-| `apps/web` | React + Leaflet por funcionalidade (`features/`), peças comuns em `shared/ui`, estado em stores (Zustand) |
+| `apps/web` | React + Leaflet por funcionalidade (`features/<nome>/` com `components/`, `hooks/`, `model/` e um `index.ts` público), peças comuns em `shared/` |
 
 | Parte | Onde | Fonte |
 |---|---|---|
@@ -71,7 +73,7 @@ Monorepo com npm workspaces (arquitetura e próximos passos em [docs/arquitetura
 | Imobiliárias da cidade | `packages/sources/src/listings/discovery.ts` | OSM `office=estate_agent` + site de cada uma |
 | Meus links | `packages/sources/src/links.ts` | página do anúncio |
 | Linha pelo número/link | `packages/sources/src/busline.ts` | Overpass (`out geom`) |
-| Mapa | `apps/web/src/*` | React + Leaflet, tiles OSM |
+| Mapa | `apps/web/src/features/map` (uma camada por arquivo em `layers/`) | React + Leaflet, tiles OSM |
 
 Tudo que vem de fora fica em cache em `data/cache/` (Overpass 7 dias, anúncios 6 h, geocodificação 30 dias).
 A primeira análise de uma cidade grande pode levar alguns minutos; as seguintes saem do cache.
@@ -99,3 +101,19 @@ total do mês, tipo, comodidades e posição no mapa. Uma extensão só diz o qu
 
 Imobiliárias pequenas não precisam de código: se o site delas publica schema.org, a descoberta já as lê. Para uma
 **plataforma** de sites de imobiliária (Kenlo, Imoview…), uma extensão serve para todas as imobiliárias que a usam.
+
+## Contribuindo
+
+Veja [CONTRIBUTING.md](CONTRIBUTING.md) (como rodar, regras e checklist do pull request) e o
+[código de conduta](CODE_OF_CONDUCT.md). Falhas de segurança: [SECURITY.md](SECURITY.md), nunca em issue pública.
+
+## Licença
+
+[PolyForm Noncommercial 1.0.0](LICENSE). Em resumo (o texto da licença é o que vale):
+
+- **Pode:** usar, estudar, modificar e redistribuir, com ou sem mudanças, para fins pessoais, de estudo, pesquisa,
+  hobby e por organizações sem fins lucrativos, escolas e órgãos públicos.
+- **Não pode:** vender, cobrar pelo uso, oferecer como serviço pago ou usar para gerar renda de qualquer forma.
+- **Tem que:** repassar a licença (ou o link dela) e a linha `Required Notice` junto com qualquer cópia.
+
+Por proibir uso comercial, ela não é uma licença "open source" no sentido da OSI: é código aberto não comercial.

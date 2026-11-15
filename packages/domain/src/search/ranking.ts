@@ -1,4 +1,5 @@
-import { PROPERTY_TYPE_LABEL, type Cell, type Listing } from "@homematch/contracts";
+import { PROPERTY_TYPE_LABEL } from "@homematch/contracts/constants";
+import type { Cell, Listing } from "@homematch/contracts";
 import { meters, money } from "../format.js";
 import { priceOf, type Filters } from "./criteria.js";
 import { AMENITY_FILTERS, amenityRank, hasAmenity } from "./listing-filters.js";

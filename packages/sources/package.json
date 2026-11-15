@@ -2,6 +2,7 @@
   "name": "@homematch/sources",
   "version": "0.1.0",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
@@ -12,6 +13,7 @@
   "dependencies": {
     "@homematch/contracts": "*",
     "@homematch/domain": "*",
-    "linkedom": "^0.18.12"
+    "linkedom": "^0.18.12",
+    "undici": "^6.29.1"
   }
 }

@@ -20,6 +20,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Dependências sem vulnerabilidade conhecida (produção, nível alto)
+        run: npm audit --omit=dev --audit-level=high
       - name: Formatação
         run: npm run format:check
       - name: Lint (inclui as regras de dependência entre pacotes)

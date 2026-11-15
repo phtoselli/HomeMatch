@@ -1,9 +1,17 @@
 import { z } from "zod";
 
-export const latLngSchema = z.object({ lat: z.number(), lng: z.number() });
+export const latitudeSchema = z.number().min(-90).max(90);
+export const longitudeSchema = z.number().min(-180).max(180);
+
+export const latLngSchema = z.object({ lat: latitudeSchema, lng: longitudeSchema });
 export type LatLng = z.infer<typeof latLngSchema>;
 
-export const bboxSchema = z.object({ south: z.number(), west: z.number(), north: z.number(), east: z.number() });
+export const bboxSchema = z.object({
+  south: latitudeSchema,
+  west: longitudeSchema,
+  north: latitudeSchema,
+  east: longitudeSchema,
+});
 export type BBox = z.infer<typeof bboxSchema>;
 
 /** Anel de polígono em [lng, lat] (ordem GeoJSON). Um polígono é [externo, ...buracos]. */

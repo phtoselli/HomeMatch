@@ -2,10 +2,11 @@
   "name": "homematch",
   "version": "0.1.0",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
   "description": "Mapa para achar aluguel: regiões perto do trabalho (transporte público), com o que você precisa por perto, e imóveis raspados das imobiliárias.",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "workspaces": [
     "packages/*",
@@ -19,6 +20,7 @@
     "start": "npm run start -w @homematch/api",
     "app": "node scripts/app.mjs",
     "build:vercel": "npm run build && node scripts/build-vercel.mjs",
+    "preview:vercel": "node scripts/preview-vercel.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "npm run typecheck --workspaces --if-present",
@@ -45,5 +47,9 @@
     "typescript-eslint": "^8.72.2",
     "vite": "^5.4.14",
     "vitest": "^2.1.9"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/phtoselli/HomeMatch.git"
   }
 }

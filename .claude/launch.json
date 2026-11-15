@@ -1,6 +1,17 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "mapa-aluguel", "runtimeExecutable": "npm.cmd", "runtimeArgs": ["run", "dev"], "port": 5173 }
+    {
+      "name": "mapa-aluguel",
+      "runtimeExecutable": "npm.cmd",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "vercel-preview",
+      "runtimeExecutable": "npm.cmd",
+      "runtimeArgs": ["run", "preview:vercel"],
+      "port": 4173
+    }
   ]
 }

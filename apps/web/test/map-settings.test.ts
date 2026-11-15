@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Cell } from "@homematch/contracts";
 import { bandOf, greatThreshold, showCell } from "@homematch/domain";
-import { DEFAULT_MAP_SETTINGS, normalizeMapSettings } from "../src/features/map/settings";
+import { DEFAULT_MAP_SETTINGS, normalizeMapSettings } from "@/features/map/model/settings";
 
 const cell = (score: number, misses?: number): Cell => ({
   id: String(score),

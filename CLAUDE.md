@@ -23,14 +23,16 @@ Monorepo (npm workspaces). Plano completo em [docs/arquitetura.md](docs/arquitet
   `routes/` só valida e chama, `services/` orquestra fontes + domínio, `plugins/` (erros, streaming).
   Respostas longas (`/api/analyze`, `/api/listings`, `/api/links`) são **NDJSON** em streaming
   (`progress` / `warning` / `partial` / `result` / `error`).
-- `apps/web`: React 18 + react-leaflet 4.
-  - `features/<assunto>/`: componentes, store (Zustand) e hooks de cada parte (search, results, favorites, map,
-    transit, links). `app/` compõe a tela.
-  - `shared/ui`: peças reutilizáveis sem regra de negócio (Modal, Switch, Segmented, Spinner, CloseButton, Icon…),
-    com CSS Modules. `shared/api`: cliente HTTP e leituras com TanStack Query. `shared/lib/persist.ts`: preferências
-    no localStorage (chaves `mapa-aluguel:<nome>`, mantidas entre versões).
-  - Camadas grandes do mapa (células, POIs, linhas) são desenhadas de forma imperativa com `useLayer` em
-    `features/map/MapView.tsx`, em canvas, por desempenho.
+- `apps/web`: React 18 + react-leaflet 4. Estrutura completa em [docs/arquitetura.md](docs/arquitetura.md#5-app-react).
+  - `features/<assunto>/` (search, results, map, transit, links, favorites): `components/`, `hooks/`, `model/`
+    (stores Zustand), `lib/` e um `index.ts` com a API pública. De fora, só `@/features/<assunto>`; dentro, caminho
+    relativo. `app/` compõe a tela.
+  - `shared/ui`: peças reutilizáveis sem regra de negócio (Modal, Switch, Segmented, Spinner, ExternalLink, Photo,
+    Icon…), com CSS Modules. `shared/api`: cliente HTTP e leituras com TanStack Query. `shared/lib/persist.ts`:
+    preferências no localStorage (chaves `mapa-aluguel:<nome>`, mantidas entre versões). `shared/` não importa features.
+  - Camadas do mapa: um arquivo por camada em `features/map/layers/`, desenhadas de forma imperativa com `useLayer`,
+    em canvas, por desempenho.
+  - Alias `@/` = `apps/web/src` (Vite, tsconfig e Vitest).
 
 ## Regras
 
@@ -41,7 +43,11 @@ Monorepo (npm workspaces). Plano completo em [docs/arquitetura.md](docs/arquitet
 - **Nada de contornar bloqueio.** Se um site exigir captcha/login ou bloquear, o raspador registra o aviso e
   segue com as outras fontes. Não adicionar plugins de "stealth" nem rotação de IP. Extensões leem só páginas
   públicas de busca (nada de API interna do site com Origin/Referer forjados) e o motor respeita o robots.txt.
-- `links.ts` baixa URLs coladas pelo usuário: mantenha `assertPublicUrl` (sem rede local).
+- **Só rede pública:** `net.ts` confere a URL e o IP na conexão de toda chamada do `httpFetch` (links colados e
+  sites vindos do OSM são de terceiros). Não chame `fetch` direto nem desligue o `publicDispatcher`.
+- **Link de fora vira `href`/`src` só por `safeExternalUrl`** (domain): no app, `<ExternalLink>` e `<Photo>`.
+  Texto de fora em HTML do Leaflet passa por `esc` (`features/map/lib/leaflet.ts`).
+- No app e no domínio, `@homematch/contracts` só com `import type`; valores em `@homematch/contracts/constants`.
 - **Dependências entre pacotes** seguem as setas da arquitetura; o ESLint (`no-restricted-imports`) barra o resto
   (ex.: `domain` não importa `sources`, o app não importa `sources` nem Node).
 - Regra nova que vale para servidor e app vai para `domain`, com teste. Componente que se repete vai para `shared/ui`.
@@ -59,7 +65,8 @@ npm run typecheck    # tsc em cada pacote
 npm run lint
 npm run format       # Prettier
 npm run check        # o que o CI roda: lint, tipos, testes e build
-npm run build:vercel # o que a Vercel roda a cada push na main (.vercel/output)
+npm run build:vercel   # o que a Vercel roda a cada push na main (.vercel/output)
+npm run preview:vercel # serve esse build no computador com os cabeçalhos da Vercel (API local em :3333)
 ```
 
 Produção: projeto `home-match` na Vercel (https://home-match-delta.vercel.app), publica a cada push na `main`.

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { timetableIdSchema } from "@homematch/contracts";
 import { findBusLines, findBusLinesNear, operatorById, operatorFor } from "@homematch/sources";
 import { HttpProblem } from "../plugins/errors.js";
-import { bboxFrom, bboxQuery, cityFrom, cityQuery } from "./query.js";
+import { bboxFrom, bboxQuery, cityFrom, cityQuery, latQuery, lngQuery } from "./query.js";
 
 /** Linhas de ônibus: operador da cidade (ex.: EMDEC) primeiro, OpenStreetMap como reserva. */
 export async function transitRoutes(app: FastifyInstance) {
@@ -14,7 +14,7 @@ export async function transitRoutes(app: FastifyInstance) {
   });
 
   app.get("/bus", async (req) => {
-    const q = z.object({ q: z.string().min(1), ...bboxQuery, ...cityQuery }).parse(req.query);
+    const q = z.object({ q: z.string().min(1).max(500), ...bboxQuery, ...cityQuery }).parse(req.query);
     // Id salvo de uma linha do operador ("emdec:353:1").
     const byId = q.q.match(/^([a-z]+):(.+)$/);
     const saved = byId && operatorById(byId[1]!);
@@ -43,8 +43,8 @@ export async function transitRoutes(app: FastifyInstance) {
   app.get("/bus/near", async (req) => {
     const q = z
       .object({
-        lat: z.coerce.number(),
-        lng: z.coerce.number(),
+        lat: latQuery,
+        lng: lngQuery,
         radius: z.coerce.number().min(100).max(2000).default(700),
         max: z.coerce.number().min(1).max(20).default(8),
         ...cityQuery,

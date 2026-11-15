@@ -11,7 +11,8 @@ import { transitRoutes } from "./routes/transit.js";
  * Rotas em /api (o app chama sempre pelo mesmo caminho, no Vite e em produção).
  */
 export async function buildApp(env: Pick<Env, "LOG_LEVEL" | "serveWeb" | "WEB_DIST">) {
-  const app = Fastify({ logger: { level: env.LOG_LEVEL }, bodyLimit: 20 * 1024 * 1024 });
+  // 2 MB cabe com folga o limite da maior cidade (São Paulo tem ~150 KB) e barra corpos absurdos.
+  const app = Fastify({ logger: { level: env.LOG_LEVEL }, bodyLimit: 2 * 1024 * 1024 });
   registerErrorHandler(app);
 
   await app.register(

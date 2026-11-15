@@ -1,8 +1,8 @@
 import type { City } from "@homematch/contracts";
 import { money, type Filters, type Params } from "@homematch/domain";
-import { Icon, Segmented, type IconName } from "../shared/ui";
+import { Icon, type IconName, Segmented } from "@/shared/ui";
 
-import type { Mode } from "./shellStore";
+import type { Mode } from "./shell";
 
 interface Props {
   city: City | null;

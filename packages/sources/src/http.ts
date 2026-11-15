@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
+import { PrivateNetworkError, assertPublicUrl, publicDispatcher } from "./net.js";
 
 /** Identificação honesta do app (política de uso do OSM/Nominatim pede um User-Agent próprio). */
 export const APP_UA = "HomeMatch/0.1 (ferramenta pessoal de busca de aluguel)";
@@ -133,10 +134,16 @@ export interface FetchOpts extends RequestInit {
   retries?: number;
 }
 
-/** fetch com timeout, ritmo por host e novas tentativas em 429/5xx/erro de rede. */
+const isPrivateNetwork = (e: unknown) =>
+  e instanceof PrivateNetworkError || (e as { cause?: unknown })?.cause instanceof PrivateNetworkError;
+
+/**
+ * fetch com timeout, ritmo por host e novas tentativas em 429/5xx/erro de rede.
+ * Só fala com endereços públicos (`net.ts`): texto da URL conferido aqui, IP conferido na conexão.
+ */
 export async function httpFetch(url: string, opts: FetchOpts = {}): Promise<Response> {
   const { minIntervalMs = 500, timeoutMs = 60_000, retries = 2, ...init } = opts;
-  const host = new URL(url).host;
+  const host = assertPublicUrl(url).host;
   let lastErr: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     await throttle(host, minIntervalMs);
@@ -145,18 +152,48 @@ export async function httpFetch(url: string, opts: FetchOpts = {}): Promise<Resp
         ...init,
         headers: { "User-Agent": APP_UA, ...(init.headers as Record<string, string>) },
         signal: AbortSignal.timeout(timeoutMs),
-      });
+        // O fetch do Node aceita o dispatcher do undici (fora dos tipos do DOM).
+        dispatcher: publicDispatcher,
+      } as RequestInit);
       if (res.status === 429 || res.status >= 500) {
         lastErr = new HttpError(res.status, url, await res.text().catch(() => ""));
       } else {
         return res;
       }
     } catch (e) {
+      if (isPrivateNetwork(e)) throw new PrivateNetworkError();
       lastErr = e;
     }
     if (attempt < retries) await new Promise((r) => setTimeout(r, 2000 * 2 ** attempt));
   }
   throw lastErr;
+}
+
+/**
+ * Lê o corpo como texto até `maxBytes` (página colada pelo usuário pode ser um arquivo enorme).
+ * Passou do limite, para de baixar e dá erro.
+ */
+export async function readTextLimited(res: Response, maxBytes: number): Promise<string> {
+  const declared = Number(res.headers.get("content-length"));
+  if (declared > maxBytes) {
+    await res.body?.cancel();
+    throw new Error(`página grande demais (${Math.round(declared / 1e6)} MB)`);
+  }
+  if (!res.body) return "";
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel();
+      throw new Error(`página grande demais (mais de ${Math.round(maxBytes / 1e6)} MB)`);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 export async function httpJson<T>(url: string, opts: FetchOpts = {}): Promise<T> {

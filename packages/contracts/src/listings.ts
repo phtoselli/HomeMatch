@@ -2,18 +2,9 @@ import { z } from "zod";
 import { regionSchema } from "./analysis.js";
 import { bboxSchema } from "./geo.js";
 import { citySchema } from "./place.js";
+import { PROPERTY_TYPES } from "./constants.js";
 
-export const PROPERTY_TYPES = ["apartamento", "casa", "casa_condominio", "studio", "outro"] as const;
 export const propertyTypeSchema = z.enum(PROPERTY_TYPES);
-export type PropertyType = z.infer<typeof propertyTypeSchema>;
-
-export const PROPERTY_TYPE_LABEL: Record<PropertyType, string> = {
-  apartamento: "Apartamento",
-  casa: "Casa",
-  casa_condominio: "Casa de condomínio",
-  studio: "Studio / kitnet",
-  outro: "Outro",
-};
 
 /**
  * Fonte de anúncios: um portal com extensão própria ("quintoandar", "chavesnamao"…) ou o site de uma
@@ -115,7 +106,7 @@ export type ListingsRequest = z.infer<typeof listingsRequestSchema>;
 // ---------- Meus links ----------
 
 export const linksRequestSchema = z.object({
-  urls: z.array(z.string().min(8)).min(1).max(60),
+  urls: z.array(z.string().min(8).max(2048)).min(1).max(60),
   cityBBox: bboxSchema.optional(),
 });
 export type LinksRequest = z.infer<typeof linksRequestSchema>;

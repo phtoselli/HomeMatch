@@ -19,7 +19,7 @@ export type Env = z.infer<typeof envSchema> & { port: number; serveWeb: boolean 
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const env = envSchema.parse(source);
-  // PORT só vale em produção (o Cloud Run define): no desenvolvimento ele costuma ser a porta do Vite.
+  // PORT só vale em produção (definido pela hospedagem): no desenvolvimento ele costuma ser a porta do Vite.
   const port = env.API_PORT ?? (env.NODE_ENV === "production" ? env.PORT : undefined) ?? 3333;
   return { ...env, port, serveWeb: existsSync(env.WEB_DIST) };
 }

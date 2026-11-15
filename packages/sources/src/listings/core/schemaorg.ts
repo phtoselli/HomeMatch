@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { LatLng } from "@homematch/contracts";
+import { safeExternalUrl } from "@homematch/domain";
 import { firstInt, parseBRL } from "../normalize.js";
 import type { RawListing } from "./types.js";
 
@@ -156,7 +157,7 @@ export function parseSchemaOrgListings(html: string, pageUrl: string): RawListin
   const out = new Map<string, RawListing>();
   const add = (r: Partial<RawListing>, src: Json) => {
     if (!r.rent || r.rent < 100) return; // sem preço ou "sob consulta"
-    const url = r.url ? new URL(r.url, pageUrl).toString() : undefined;
+    const url = safeExternalUrl(r.url, pageUrl);
     if (!url) return;
     const id = idFrom(url, src);
     if (out.has(id)) return;

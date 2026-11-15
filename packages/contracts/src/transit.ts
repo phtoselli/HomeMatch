@@ -1,9 +1,8 @@
 import { z } from "zod";
 import { latLngTupleSchema } from "./geo.js";
+import { TRANSIT_MODES } from "./constants.js";
 
-export const TRANSIT_MODES = ["bus", "trolleybus", "subway", "train", "light_rail", "tram", "monorail"] as const;
 export const transitModeSchema = z.enum(TRANSIT_MODES);
-export type TransitMode = z.infer<typeof transitModeSchema>;
 
 /** Linha que a análise usa para chegar ao trabalho. */
 export const transitRouteSchema = z.object({

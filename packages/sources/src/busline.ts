@@ -33,7 +33,9 @@ export function parseBusQuery(raw: string): BusQuery {
   if (/^https?:\/\//i.test(q)) {
     const u = new URL(q);
     const cdp = u.searchParams.get("cdp");
-    const pattern = cdp ? `cdp=${cdp}($|&)` : escRe(`${u.host.replace(/^www\./, "")}${u.pathname}`.replace(/\/$/, ""));
+    const pattern = cdp
+      ? `cdp=${escRe(cdp)}($|&)`
+      : escRe(`${u.host.replace(/^www\./, "")}${u.pathname}`.replace(/\/$/, ""));
     return { kind: "website", pattern, refs: refCandidates(decodeURIComponent(u.pathname + " " + u.search)) };
   }
   const text = q.replace(/^(linha|ônibus|onibus|bus)\s+/i, "").trim();

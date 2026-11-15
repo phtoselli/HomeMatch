@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildBusQuery, buildNearQuery, parseBusLines, parseBusQuery, refCandidates } from "../src/busline.js";
-import { assertPublicUrl, extractListingInfo, infoFromUrl, isPrivateAddress, sourceOf } from "../src/links.js";
+import { extractListingInfo, infoFromUrl, sourceOf } from "../src/links.js";
+import { assertPublicUrl, isPrivateAddress } from "../src/net.js";
 import type { OsmElement } from "../src/osm/overpass.js";
 
 const fx = (f: string) => readFileSync(join(__dirname, "fixtures", f), "utf8");
@@ -99,6 +100,12 @@ describe("linha de ônibus", () => {
     const sp = parseBusQuery("https://sptrans.com.br/itinerarios/linha/?cdp=170211");
     expect(sp).toMatchObject({ kind: "website", pattern: "cdp=170211($|&)" });
     expect(refCandidates("moovit.com/lines/875A-10-lapa")).toContain("875A-10");
+  });
+
+  it("texto do link não escapa das aspas da consulta ao Overpass", () => {
+    const q = buildBusQuery(parseBusQuery(`https://x.com/?cdp=1"];out;rel(1);("`));
+    expect(q).not.toContain(`cdp=1"`);
+    expect(q).toContain(`cdp=1\\"`);
   });
 
   it("buildBusQuery filtra pela bbox e aceita sufixo de variante", () => {
