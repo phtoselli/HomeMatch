@@ -16,6 +16,8 @@ export const featureRequestSchema = z.object({
   id: z.string(),
   /** Metros. */
   radius: z.number().min(100).max(10_000),
+  /** Importância: 3 = principal, 2 = importante, 1 = bom ter. */
+  weight: z.number().int().min(1).max(3).default(2),
 });
 export type FeatureRequest = z.infer<typeof featureRequestSchema>;
 

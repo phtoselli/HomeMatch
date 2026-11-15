@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { analysisBBox, rankRegions, scoreGrid } from "@homematch/domain";
+import { rankRegions, scoreGrid } from "@homematch/domain";
 import { buildFeatureQuery, parseFeaturePois } from "../src/features.js";
 import { padBBox } from "@homematch/domain";
 import type { BoardingStop } from "@homematch/domain";
@@ -18,9 +18,8 @@ const base = {
   bbox: padBBox({ south: -23.6, north: -23.55, west: -46.65, east: -46.65 }, 1500),
   work,
   cellSizeM: 500,
-  maxCommuteMin: 40,
   maxWalkToStopM: 600,
-  commuteWeight: 0.7,
+  transitWeight: 3,
   stops,
   places: [
     { lat: -23.552, lng: -46.65, name: "Vila Norte", rank: 0 },
@@ -28,69 +27,87 @@ const base = {
   ],
 };
 
-describe("scoreGrid", () => {
-  it("só mantém células que atendem a todas as características", () => {
-    const pois = {
-      parque: [{ id: "p1", feature: "parque", lat: -23.553, lng: -46.651 }],
-      atacarejo: [{ id: "m1", feature: "atacarejo", lat: -23.556, lng: -46.649 }],
-    };
+describe("scoreGrid: níveis pelas prioridades (sem tempo máximo)", () => {
+  const pois = {
+    parque: [{ id: "p1", feature: "parque", lat: -23.553, lng: -46.651 }],
+    atacarejo: [{ id: "m1", feature: "atacarejo", lat: -23.556, lng: -46.649 }],
+  };
+
+  it("transporte principal: boa/excelente onde o tempo é bom; ok onde só os lugares batem", () => {
     const out = scoreGrid({
       ...base,
       features: [
-        { id: "parque", radius: 800 },
-        { id: "atacarejo", radius: 1000 },
+        { id: "parque", radius: 800, weight: 2 },
+        { id: "atacarejo", radius: 1000, weight: 2 },
       ],
       pois,
     });
     expect(out.cells.length).toBeGreaterThan(0);
+    expect(out.commuteRefMin).toBeGreaterThanOrEqual(40);
     for (const c of out.cells) {
-      expect(c.featureDist.parque).toBeLessThanOrEqual(800);
-      expect(c.featureDist.atacarejo).toBeLessThanOrEqual(1000);
-      expect(c.commuteMin).toBeLessThanOrEqual(40);
-      expect(c.region).toBe("Vila Norte");
+      const transit = c.hits.includes("transporte");
+      if (c.level === "ok") expect(transit).toBe(false);
+      else expect(transit).toBe(true);
+      if (c.level === "excelente") expect(c.hits.length).toBeGreaterThanOrEqual(2);
     }
-    expect(out.cellsReachable).toBeGreaterThan(out.cells.length);
+    // Sem limite de tempo: entram áreas acima do antigo teto, desde que algo seja atingido.
+    expect(out.levels.excelente + out.levels.boa + out.levels.ok).toBe(out.cells.length);
   });
 
-  it("flex: mantém também o que passa por pouco, com nota menor e quantas coisas faltam", () => {
-    const pois = { parque: [{ id: "p1", feature: "parque", lat: -23.553, lng: -46.651 }] };
-    const input = { ...base, features: [{ id: "parque", radius: 800 }], pois };
-    const strict = scoreGrid(input);
-    const flex = scoreGrid({ ...input, flex: true });
-    expect(flex.cells.length).toBeGreaterThan(strict.cells.length);
-    expect(flex.cellsMatching).toBe(strict.cells.length);
-    const exact = flex.cells.filter((c) => c.misses === 0);
-    const near = flex.cells.filter((c) => (c.misses ?? 0) > 0);
-    expect(exact.length).toBe(strict.cells.length);
-    expect(near.length).toBeGreaterThan(0);
-    expect(Math.max(...near.map((c) => c.score))).toBeLessThan(100);
-    for (const c of near) {
-      expect(c.commuteMin).toBeLessThanOrEqual(40 + 15);
-      expect(c.misses).toBeLessThanOrEqual(2);
+  it("lugar como principal: perto dele a área é boa ou excelente, mesmo com trajeto ruim", () => {
+    const out = scoreGrid({
+      ...base,
+      transitWeight: 1,
+      features: [{ id: "parque", radius: 800, weight: 3 }],
+      pois,
+    });
+    for (const c of out.cells) {
+      if (c.hits.includes("parque")) expect(["boa", "excelente"]).toContain(c.level);
+      else expect(c.level).toBe("ok");
     }
-    const regions = rankRegions(flex.cells, 500);
-    expect(regions[0]!.misses).toBe(0); // quem atende a tudo vem antes
-    expect(regions.some((r) => r.misses! > 0)).toBe(true);
+    expect(out.cells.some((c) => c.hits.includes("parque") && c.level === "excelente")).toBe(true);
   });
 
-  it("sem características, a nota é só o trajeto (mais perto = melhor)", () => {
-    const out = scoreGrid({ ...base, features: [], pois: {} });
+  it("nada atingido = fora (a área não entra)", () => {
+    const out = scoreGrid({
+      ...base,
+      transitWeight: 0,
+      features: [{ id: "parque", radius: 300, weight: 3 }],
+      pois: { parque: [] },
+    });
+    expect(out.cells).toHaveLength(0);
+  });
+
+  it("linha escolhida pela pessoa: perto dos pontos dela, o transporte conta como atingido", () => {
+    const far = { ...base, stops: [], transitWeight: 3, features: [], pois: {} };
+    const sem = scoreGrid(far);
+    const com = scoreGrid({ ...far, preferredStops: [{ lat: -23.55, lng: -46.65 }] });
+    expect(com.cells.length).toBeGreaterThan(sem.cells.length);
+    expect(com.cells.every((c) => c.hits.includes("transporte"))).toBe(true);
+  });
+
+  it("regiões: o nível vem antes da nota", () => {
+    const out = scoreGrid({
+      ...base,
+      features: [{ id: "parque", radius: 800, weight: 2 }],
+      pois,
+    });
     const regions = rankRegions(out.cells, 500);
-    expect(regions[0]!.name).toBe("Jardim Sul");
+    const order = { excelente: 2, boa: 1, ok: 0 } as const;
+    for (let i = 1; i < regions.length; i++)
+      expect(order[regions[i - 1]!.level]).toBeGreaterThanOrEqual(order[regions[i]!.level]);
     expect(regions[0]!.rank).toBe(1);
-    expect(regions[0]!.commuteMin).toBeLessThanOrEqual(regions[1]!.commuteMin);
   });
 });
 
 describe("modo reserva (poucas linhas no OSM)", () => {
   it("usa pontos de ônibus para estimar o trajeto quando não há linha direta", () => {
-    const sem = scoreGrid({ ...base, stops: [], features: [], pois: {}, maxCommuteMin: 60 });
+    // Um parque perto do ponto do norte mantém as áreas de lá no mapa (o tempo de ônibus passa da referência).
     const com = scoreGrid({
       ...base,
       stops: [],
-      features: [],
-      pois: {},
-      maxCommuteMin: 60,
+      features: [{ id: "parque", radius: 2000, weight: 1 }],
+      pois: { parque: [{ id: "p1", feature: "parque", lat: -23.55, lng: -46.65 }] },
       fallback: {
         busStops: [
           { lat: -23.55, lng: -46.651 },
@@ -99,7 +116,6 @@ describe("modo reserva (poucas linhas no OSM)", () => {
         workStopDistM: 100,
       },
     });
-    expect(com.cells.length).toBeGreaterThan(sem.cells.length);
     expect(com.cells.some((c) => c.via === "ônibus (estimado)")).toBe(true);
   });
 });
@@ -115,20 +131,5 @@ describe("consultas de características", () => {
       { type: "node", id: 3, tags: { name: "Sem coordenada" } },
     ]);
     expect(pois.map((p) => p.name)).toEqual(["Parque Taquaral"]);
-  });
-});
-
-describe("analysisBBox", () => {
-  it("corta a bbox da cidade ao alcance máximo do trajeto", () => {
-    const city = { south: -24.0, north: -23.3, west: -46.9, east: -46.3 };
-    const b = analysisBBox(city, work, 30); // 30 min → ~17,5 km
-    expect(b.south).toBeGreaterThan(city.south);
-    expect(b.north).toBeLessThan(-23.4);
-  });
-
-  it("trabalho em outra cidade: analisa a cidade inteira onde vai morar", () => {
-    const cosmopolis = { south: -22.7, north: -22.55, west: -47.3, east: -47.1 };
-    const campinas = { lat: -22.9, lng: -47.06 };
-    expect(analysisBBox(cosmopolis, campinas, 45)).toEqual(cosmopolis);
   });
 });

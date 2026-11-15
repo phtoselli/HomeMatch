@@ -15,6 +15,7 @@ import {
 import { api } from "@/shared/api/client";
 import { AMENITY_ICON, FEATURE_ICON, Icon, Spinner } from "@/shared/ui";
 import type { Search } from "../hooks/useSearch";
+import { PrioritiesPicker } from "./PrioritiesPicker";
 import { SearchBox } from "./SearchBox";
 import { SourcesPicker, sourcesSummary } from "./SourcesPicker";
 
@@ -38,7 +39,6 @@ interface Props {
   onClose?: () => void;
 }
 
-const TIMES = [30, 45, 60, 90];
 const ROOMS: [number, string][] = [
   [0, "Tanto faz"],
   [1, "1+"],
@@ -49,7 +49,7 @@ const SLACKS = [0, 10, 15, 25];
 const RADII = [300, 500, 800, 1000, 1500, 2000, 3000];
 
 /**
- * Uma tela só, com o essencial: onde trabalha, quanto quer pagar, quartos, tempo e o que quer perto.
+ * Uma tela só, com o essencial: onde trabalha, quanto quer pagar, quartos, o que quer perto e o que importa mais.
  * Tudo tem um padrão razoável; o resto fica em "Mais opções". O que passar um pouco do pedido não some:
  * aparece como "quase lá", dizendo o que não bate.
  */
@@ -240,32 +240,8 @@ export function SetupWizard(p: Props) {
             {f.minBedrooms > 1 && <span className="hint">Com {f.minBedrooms - 1} quarto aparece como "quase lá".</span>}
           </fieldset>
 
-          <fieldset className="field q">
-            <span className="qnum">5</span>
-            <legend className="label">Tempo máximo até o trabalho</legend>
-            <div className="chips">
-              {TIMES.map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  className="choice"
-                  aria-pressed={s.params.maxCommuteMin === t}
-                  onClick={() => s.setParams({ ...s.params, maxCommuteMin: t })}
-                >
-                  {t} min
-                </button>
-              ))}
-              {!TIMES.includes(s.params.maxCommuteMin) && (
-                <button type="button" className="choice" aria-pressed>
-                  {s.params.maxCommuteMin} min
-                </button>
-              )}
-            </div>
-            <span className="hint">De porta a porta, de ônibus. Até 15 min a mais aparece como "quase lá".</span>
-          </fieldset>
-
           <fieldset className="field q wide">
-            <span className="qnum">6</span>
+            <span className="qnum">5</span>
             <legend className="label">
               O que quer ter perto de casa? <span className="muted">(opcional)</span>
             </legend>
@@ -292,6 +268,23 @@ export function SetupWizard(p: Props) {
                 . Mude as distâncias em "Mais opções".
               </span>
             )}
+          </fieldset>
+
+          <fieldset className="field q wide">
+            <span className="qnum">6</span>
+            <legend className="label">O que é mais importante para você?</legend>
+            <PrioritiesPicker
+              priorities={s.priorities}
+              setPriorities={s.setPriorities}
+              chosen={s.chosen}
+              features={p.features}
+            />
+            <span className="hint">
+              Não há tempo máximo: cada região ganha um nível. <b>Excelente</b> atinge a principal e quase todo o resto;{" "}
+              <b>boa</b> atinge a principal; <b>ok</b> atinge outra coisa, mas não a principal. Os imóveis só aparecem
+              nessas regiões, e o card mostra o tempo até o trabalho. Sem carro? Deixe o transporte como principal. Com
+              carro, "Não uso".
+            </span>
           </fieldset>
 
           <fieldset className="field q wide">
@@ -467,7 +460,7 @@ export function SetupWizard(p: Props) {
 
           <label className="check">
             <input type="checkbox" checked={!!f.hideUnknown} onChange={() => setF({ hideUnknown: !f.hideUnknown })} />
-            Esconder anúncios que não dizem se têm os itens da pergunta 6
+            Esconder anúncios que não dizem se têm os itens da pergunta 7
           </label>
 
           <div className="grid3">
@@ -480,17 +473,6 @@ export function SetupWizard(p: Props) {
                 step={50}
                 value={s.params.maxWalkToStopM}
                 onChange={(e) => s.setParams({ ...s.params, maxWalkToStopM: Number(e.target.value) })}
-              />
-            </label>
-            <label className="field">
-              <span className="label">Tempo exato: {s.params.maxCommuteMin} min</span>
-              <input
-                type="range"
-                min={15}
-                max={120}
-                step={5}
-                value={s.params.maxCommuteMin}
-                onChange={(e) => s.setParams({ ...s.params, maxCommuteMin: Number(e.target.value) })}
               />
             </label>
             <label className="field">

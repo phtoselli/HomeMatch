@@ -1,7 +1,17 @@
 import { MapContainer, TileLayer } from "react-leaflet";
-import type { AnalysisResult, BBox, BusLine, City, FeatureDef, LatLng, Listing } from "@homematch/contracts";
+import type {
+  AnalysisResult,
+  BBox,
+  BusLine,
+  City,
+  FeatureDef,
+  LatLng,
+  Listing,
+  RegionLevel,
+} from "@homematch/contracts";
 import { Boundary } from "../layers/Boundary";
 import { BusLines } from "../layers/BusLines";
+import { atLeast } from "@homematch/domain";
 import { Cells } from "../layers/Cells";
 import { FitBounds, MapEvents, ZoomTopRight } from "../layers/Controls";
 import { ListingMarkers } from "../layers/ListingMarkers";
@@ -26,6 +36,8 @@ interface Props {
   busLines: BusLine[];
   focusListing: string | null;
   settings: MapSettings;
+  /** Nível mínimo das regiões mostradas. */
+  minLevel: RegionLevel;
   fit: FitTarget;
   onBoundsChange?: (b: BBox) => void;
   /** Imóvel selecionado (pin escuro + prévia). */
@@ -52,7 +64,7 @@ export function MapView(p: Props) {
       <FitBounds fit={p.fit} />
       <MapEvents active={p.pickingWork} onPick={p.onPickWork} onBounds={p.onBoundsChange} />
       <Boundary city={p.city} visible={p.settings.boundary} />
-      <Cells analysis={p.analysis} features={p.features} band={p.settings.cellBand} visible={p.settings.cells} />
+      <Cells analysis={p.analysis} features={p.features} minLevel={p.minLevel} visible={p.settings.cells} />
       <Routes
         analysis={p.analysis}
         hidden={p.settings.hiddenLines}
@@ -69,7 +81,7 @@ export function MapView(p: Props) {
       />
       {p.analysis && (
         <RegionBadges
-          regions={p.analysis.regions}
+          regions={p.analysis.regions.filter((r) => atLeast(r.level, p.minLevel))}
           selected={p.selectedRegions}
           onToggle={p.onToggleRegion}
           visible={p.settings.badges}

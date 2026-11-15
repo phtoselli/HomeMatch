@@ -2532,11 +2532,21 @@ details.more > .grid3 + .field {
   align-self: flex-start;
   font-size: 12.5px;
 }
-.lg-bar.great {
-  background: linear-gradient(90deg, hsl(110 75% 46%), hsl(140 75% 40%));
+.lg-levels {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
 }
-.lg-bar.ok {
-  background: linear-gradient(90deg, hsl(45 75% 58%), hsl(100 75% 48%));
+.lg-levels > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.lg-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  opacity: 0.75;
 }
 @media (max-width: 900px) {
   .map-settings {
@@ -2817,4 +2827,37 @@ input.ms-search {
   padding: 1px 7px;
   border-radius: 999px;
   white-space: nowrap;
+}
+.rtag.level {
+  color: #fff;
+}
+
+/* ---------- Prioridades (nível das regiões) ---------- */
+.prio-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.prio-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.prio-row[data-main] {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+.prio-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.prio-label .muted {
+  font-weight: 400;
 }

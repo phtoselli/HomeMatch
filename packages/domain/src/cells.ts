@@ -31,25 +31,3 @@ export function makeCellLookup(cells: Cell[], cellSizeM: number, maxM = cellSize
     return bestD <= maxDeg ? best : undefined;
   };
 }
-
-/** Quais notas de região pintar no mapa. */
-export type CellBand = "great" | "ok" | "both";
-
-/**
- * A partir de que nota a área é "ótima": o terço de cima entre as áreas que atendem a tudo
- * (as que só chegam perto, na busca flexível, ficam como "ok").
- */
-export function greatThreshold(cells: Cell[]): number {
-  const scores = cells
-    .filter((c) => !c.misses)
-    .map((c) => c.score)
-    .sort((a, b) => a - b);
-  if (!scores.length) return Infinity;
-  return scores[Math.floor(scores.length * (2 / 3))] ?? scores[scores.length - 1]!;
-}
-
-export const bandOf = (c: Cell, threshold: number): Exclude<CellBand, "both"> =>
-  !c.misses && c.score >= threshold ? "great" : "ok";
-
-export const showCell = (c: Cell, band: CellBand, threshold: number) =>
-  band === "both" || bandOf(c, threshold) === band;

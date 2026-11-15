@@ -41,7 +41,10 @@ const cell: Cell = {
   featureDist: {},
   score: 80,
   region: "R",
+  level: "boa",
+  hits: ["transporte"],
 };
+const ref = { bestMin: 20, refMin: 45 };
 const f: Filters = { ...DEFAULT_FILTERS, budget: 2300, slack: 15, priceMax: 2645, amenities: ["armario_cozinha"] };
 
 describe("alvo de preço", () => {
@@ -72,17 +75,17 @@ describe("alvo de preço", () => {
 
 describe("nota de match", () => {
   it("dentro do alvo, perto e com o item pedido > acima do alvo, longe e sem informação", () => {
-    const good = matchScore({ ...base, amenities: ["armario_cozinha"] }, cell, f, 45);
-    const bad = matchScore({ ...base, total: 2900 }, { ...cell, commuteMin: 45, score: 40 }, f, 45);
+    const good = matchScore({ ...base, amenities: ["armario_cozinha"] }, cell, f, ref);
+    const bad = matchScore({ ...base, total: 2900 }, { ...cell, commuteMin: 45, score: 40 }, f, ref);
     expect(good).toBeGreaterThan(85);
     expect(bad).toBeLessThan(good - 25);
     expect(good).toBeLessThanOrEqual(100);
   });
 
   it("sem célula analisada (fora da área) não zera, mas pesa contra", () => {
-    const off = matchScore(base, undefined, f, 45);
+    const off = matchScore(base, undefined, f, ref);
     expect(off).toBeGreaterThan(0);
-    expect(off).toBeLessThan(matchScore(base, cell, f, 45));
+    expect(off).toBeLessThan(matchScore(base, cell, f, ref));
   });
 
   it("ordena por match, por preço e por trajeto", () => {
@@ -113,23 +116,23 @@ describe("busca larga e quase lá", () => {
   });
 
   it("missesOf diz o que não bate, em texto curto", () => {
-    expect(missesOf(base, okCell, want, 45, near)).toEqual([]);
+    expect(missesOf(base, okCell, want, near)).toEqual([]);
     const m = missesOf(
       { ...base, total: 2660, bedrooms: 1, type: "casa" },
       { ...okCell, commuteMin: 52, featureDist: { atacarejo: 2600 } },
       want,
-      45,
       near,
     );
-    expect(m.map((x) => x.kind)).toEqual(["price", "rooms", "type", "commute", "place"]);
+    // Sem tempo máximo: 52 min não é mais uma falta (o tempo entra no nível da região).
+    expect(m.map((x) => x.kind)).toEqual(["price", "rooms", "type", "place"]);
     expect(m[0]!.label).toMatch(/15 acima do teto$/);
-    expect(m[3]!.label).toBe("52 min até o trabalho");
-    expect(m[4]!.label).toBe("Atacarejo a 2,6 km");
-    expect(missesOf(base, { ...okCell, featureDist: {} }, want, 45, near)[0]!.label).toBe("Atacarejo longe");
+    expect(m[3]!.label).toBe("Atacarejo a 2,6 km");
+    expect(missesOf(base, undefined, want, near)[0]!.label).toBe("Fora das regiões recomendadas");
+    expect(missesOf(base, { ...okCell, featureDist: {} }, want, near)[0]!.label).toBe("Atacarejo longe");
     // Armário: só conta como falta quando o anúncio diz que não tem (sem informação não pune).
-    expect(missesOf(base, okCell, { ...want, amenities: ["armario_cozinha"] }, 45, near)).toEqual([]);
+    expect(missesOf(base, okCell, { ...want, amenities: ["armario_cozinha"] }, near)).toEqual([]);
     expect(
-      missesOf({ ...base, amenities: ["pia"] }, okCell, { ...want, amenities: ["armario_cozinha"] }, 45, near)[0]!.kind,
+      missesOf({ ...base, amenities: ["pia"] }, okCell, { ...want, amenities: ["armario_cozinha"] }, near)[0]!.kind,
     ).toBe("item");
   });
 

@@ -1,16 +1,10 @@
 import type { AnalysisResult, AnalyzeRequest, Emit, Poi } from "@homematch/contracts";
-import {
-  FLEX,
-  analysisBBox,
-  commuteLimit,
-  inBBox,
-  inMultiPolygon,
-  padBBox,
-  rankRegions,
-  scoreGrid,
-} from "@homematch/domain";
+import { LEVEL_LABEL, inBBox, inMultiPolygon, padBBox, rankRegions, scoreGrid } from "@homematch/domain";
 import { featureById, fetchFeaturePois, fetchPlaceNames } from "@homematch/sources";
 import { intercityNetwork, localNetwork, osmArea } from "./commute.js";
+
+/** Quantas das melhores regiões levam as linhas usadas ao mapa (as mesmas que a busca de imóveis percorre). */
+const MAP_REGIONS = 15;
 
 /**
  * Análise das regiões: baixa linhas, lugares e bairros (fontes) e cruza tudo na grade (domínio).
@@ -22,7 +16,8 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
     warnings.push(m);
     emit({ type: "warning", message: m });
   };
-  const bbox = analysisBBox(req.city.bbox, req.work, commuteLimit(req.maxCommuteMin, req.flex));
+  // Sem tempo máximo, a cidade inteira entra: cada pedaço ganha um nível pelas prioridades da pessoa.
+  const bbox = req.city.bbox;
 
   // Pelo limite do município: as bboxes de cidades vizinhas se sobrepõem.
   const workInCity = req.city.boundary?.length
@@ -31,8 +26,8 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
   // Lugares e bairros saem junto com as linhas (o Overpass é lento: melhor esperar uma vez só).
   const poisPromise = Promise.all(
     req.features.map(async (f) => {
-      const pad = req.flex ? f.radius * FLEX.radiusFactor : f.radius;
-      return [f.id, await fetchFeaturePois(f.id, osmArea(req.city.bbox, pad))] as const;
+      // Margem de 2× o raio: o lugar logo além da divisa também conta (e a consulta é a mesma de antes, no cache).
+      return [f.id, await fetchFeaturePois(f.id, osmArea(req.city.bbox, f.radius * 2))] as const;
     }),
   );
   const placesPromise = fetchPlaceNames(osmArea(req.city.bbox, 2000));
@@ -63,26 +58,34 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
     boundary: req.city.boundary,
     work: req.work,
     cellSizeM: req.cellSizeM,
-    maxCommuteMin: req.maxCommuteMin,
     maxWalkToStopM: req.maxWalkToStopM,
-    commuteWeight: req.commuteWeight,
+    transitWeight: req.transitWeight,
     features: req.features,
     pois,
     stops,
     places,
+    preferredStops: req.preferredStops?.map(([lat, lng]) => ({ lat, lng })),
     fallback: net.fallback,
     hubs: net.hubs,
-    flex: req.flex,
   });
   const regions = rankRegions(grid.cells, req.cellSizeM);
-  const cellRouteIds = new Set(grid.cells.map((c) => c.routeId).filter((id): id is string => !!id));
-  if (!grid.cellsMatching) {
+  // Linhas usadas pelas melhores regiões (as que entram na busca de imóveis); a cidade inteira pesaria MBs.
+  const topNames = new Set(regions.slice(0, MAP_REGIONS).map((r) => r.name));
+  const cellRouteIds = new Set(grid.cells.filter((c) => topNames.has(c.region) && c.routeId).map((c) => c.routeId!));
+  const { excelente, boa, ok } = grid.levels;
+  if (!grid.cells.length) {
+    warn("Nenhuma região atinge o que você pediu. Aumente as distâncias dos lugares ou mude as prioridades.");
+  } else if (!excelente && !boa) {
     warn(
-      grid.cells.length
-        ? "Nenhuma área atende a tudo; mostrando as que chegam perto (um pouco mais longe ou com algum lugar mais distante)."
-        : "Nenhuma região atende a tudo. Tente aumentar o tempo máximo ou os raios das características.",
+      `Nenhuma região atinge a sua prioridade principal; mostrando as que atingem as outras (${LEVEL_LABEL.ok.toLowerCase()}).`,
     );
   }
+  emit({
+    type: "progress",
+    message:
+      `Áreas por nível: ${excelente} excelentes, ${boa} boas e ${ok} ok. ` +
+      `Tempo até o trabalho: o melhor é ${grid.commuteBestMin} min; até ${grid.commuteRefMin} min conta como bem servido.`,
+  });
 
   // Envia ao mapa só os POIs dentro da área analisada (e as linhas usadas).
   const box = padBBox(bbox, 1000);
@@ -109,9 +112,9 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
     regions,
     stats: {
       cellsTotal: grid.cellsTotal,
-      cellsReachable: grid.cellsReachable,
-      cellsMatching: grid.cellsMatching,
-      cellsNear: grid.cells.length - grid.cellsMatching,
+      levels: grid.levels,
+      commuteBestMin: grid.commuteBestMin,
+      commuteRefMin: grid.commuteRefMin,
       stopsUsable: stops.length,
     },
     warnings,

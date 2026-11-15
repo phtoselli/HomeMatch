@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import type { BBox, FeatureDef, Region } from "@homematch/contracts";
+import type { BBox, FeatureDef, Region, RegionLevel } from "@homematch/contracts";
 import {
+  LEVEL_LABEL,
+  atLeast,
+  noTransitNear,
   meters,
   money,
   priceOf,
@@ -14,7 +17,7 @@ import {
 import { ErrorAlert, FEATURE_ICON, Icon, Photo, Segmented, Spinner } from "@/shared/ui";
 import type { Search } from "@/features/search";
 import { AmenityChips, breakdown, CommuteChip, MatchBadge, overBudget, specsLine } from "./ListingBits";
-import { sourceName } from "@/shared/lib/format";
+import { LEVEL_COLOR, sourceName } from "@/shared/lib/format";
 
 interface Props {
   search: Search;
@@ -33,7 +36,6 @@ interface Props {
   canRun: boolean;
   onRunAll: () => void;
   onRunListings: (regions: Region[]) => void;
-  onTryLonger: () => void;
   stale: boolean;
   /** Troca os filtros e busca os imóveis de novo nas mesmas regiões. */
   onApplyFilters: (f: Filters) => void;
@@ -49,10 +51,16 @@ interface Props {
 /** Tela estreita: sem prévia sobre o mapa, o toque no card já abre o detalhe. */
 const narrow = () => window.matchMedia("(max-width: 900px)").matches;
 
+const MIN_LEVELS: [RegionLevel, string][] = [
+  ["ok", "Todas"],
+  ["boa", "Boa ou melhor"],
+  ["excelente", "Só excelentes"],
+];
+
 const TIERS = [
-  { t: 0, title: "Atendem a tudo", hint: "Preço, quartos, tempo e o que você quer perto." },
-  { t: 1, title: "Preço, quartos e tempo ok", hint: "Falta algo de perto ou do imóvel; o card diz o quê." },
-  { t: 2, title: "Quase lá", hint: "Preço, quartos ou tempo passa um pouco." },
+  { t: 0, title: "Atendem a tudo", hint: "Preço, quartos e o que você quer perto, numa região recomendada." },
+  { t: 1, title: "Preço e quartos ok", hint: "Falta algo de perto ou do imóvel; o card diz o quê." },
+  { t: 2, title: "Quase lá", hint: "Preço ou quartos passa um pouco." },
   { t: 3, title: "Outras opções", hint: "Duas ou mais coisas importantes não batem." },
 ];
 
@@ -94,6 +102,8 @@ export function ResultsPanel(p: Props) {
   const warnings = s.warnings;
   const a = s.analysis;
   const selectedRegions = a?.regions.filter((r) => s.selectedRegions.has(r.id)) ?? [];
+  // Regiões do nível escolhido (ou melhor).
+  const shownRegions = a?.regions.filter((r) => atLeast(r.level, s.minLevel)) ?? [];
 
   function renderCard({ l, cell, match, misses }: Ranked) {
     const over = overBudget(l, f);
@@ -278,7 +288,7 @@ export function ResultsPanel(p: Props) {
                       : ideal
                         ? `${ideal} ${ideal === 1 ? "imóvel atende" : "imóveis atendem"} a tudo`
                         : good
-                          ? `${good} ${good === 1 ? "imóvel cabe" : "imóveis cabem"} no preço, quartos e tempo`
+                          ? `${good} ${good === 1 ? "imóvel cabe" : "imóveis cabem"} no preço e nos quartos`
                           : almost
                             ? `${almost} ${almost === 1 ? "imóvel chega" : "imóveis chegam"} perto`
                             : `${others} ${others === 1 ? "opção" : "opções"} perto do que você pediu`}
@@ -293,8 +303,8 @@ export function ResultsPanel(p: Props) {
                     .map((t) => (
                       <b key={t}>{t} · </b>
                     ))}
-                  em {searched.length || selectedRegions.length} {searched.length === 1 ? "região" : "regiões"} perto do
-                  trabalho.
+                  em {searched.length || selectedRegions.length}{" "}
+                  {searched.length === 1 ? "região recomendada" : "regiões recomendadas"}.
                 </p>
               )}
             </div>
@@ -302,17 +312,15 @@ export function ResultsPanel(p: Props) {
             {a.regions.length === 0 && !s.busy && (
               <div className="alert">
                 <span>
-                  Nenhum bairro cabe em {s.params.maxCommuteMin} min com tudo o que você pediu por perto. Aumentar o
-                  tempo deixa entrar trajetos com uma baldeação; diminuir os lugares obrigatórios também ajuda.
+                  Nenhuma região atinge o que você pediu. Aumente as distâncias dos lugares ou mude as prioridades (por
+                  exemplo, deixe um lugar como "bom ter").
                 </span>
                 <div className="row">
-                  {s.params.maxCommuteMin < 60 && (
-                    <button type="button" className="btn primary" onClick={p.onTryLonger}>
-                      Tentar com 60 min
-                    </button>
-                  )}
+                  <button type="button" className="btn primary" onClick={() => p.onEdit(1)}>
+                    Mudar prioridades
+                  </button>
                   <button type="button" className="btn" onClick={() => p.onEdit(2)}>
-                    Rever o que precisa perto
+                    Rever as distâncias
                   </button>
                 </div>
               </div>
@@ -428,11 +436,6 @@ export function ResultsPanel(p: Props) {
                         Ver os {s.diagnosis.others} de outros tipos
                       </button>
                     )}
-                    {s.params.maxCommuteMin < 60 && (
-                      <button type="button" className="btn" onClick={p.onTryLonger}>
-                        Buscar com 60 min
-                      </button>
-                    )}
                   </div>
                 </>
               ) : (
@@ -472,15 +475,23 @@ export function ResultsPanel(p: Props) {
             <summary>
               <span>Regiões encontradas</span>
               <span className="muted">
-                {a.regions.length} no total · {selectedRegions.length} na busca de imóveis
+                {shownRegions.length} no total · {selectedRegions.length} na busca de imóveis
               </span>
             </summary>
+            <div className="seg small" role="group" aria-label="Quais regiões mostrar">
+              {MIN_LEVELS.map(([l, label]) => (
+                <button key={l} type="button" aria-pressed={s.minLevel === l} onClick={() => s.setMinLevel(l)}>
+                  {label}
+                </button>
+              ))}
+            </div>
             <p className="hint">
-              {a.stats.cellsMatching} de {a.stats.cellsReachable} áreas alcançáveis têm tudo o que você pediu. Marque as
-              regiões e busque de novo.
+              Áreas: {a.stats.levels.excelente} excelentes, {a.stats.levels.boa} boas e {a.stats.levels.ok} ok. O melhor
+              tempo até o trabalho é {a.stats.commuteBestMin} min; até {a.stats.commuteRefMin} min o transporte conta
+              como atingido. Marque as regiões e busque de novo.
             </p>
             <ol className="regions">
-              {a.regions.slice(0, 30).map((r) => (
+              {shownRegions.slice(0, 30).map((r) => (
                 <li key={r.id} data-on={s.selectedRegions.has(r.id) || undefined}>
                   <input
                     type="checkbox"
@@ -496,10 +507,15 @@ export function ResultsPanel(p: Props) {
                   <button type="button" className="region-btn" onClick={() => p.onFit(r.bbox)}>
                     <span className="rname">
                       {r.rank}. {r.name}
-                      {r.misses ? <span className="rtag">quase</span> : null}
+                      <span className="rtag level" style={{ background: LEVEL_COLOR[r.level] }}>
+                        {LEVEL_LABEL[r.level]}
+                      </span>
                     </span>
                     <span className="rmeta">
-                      <Icon name="bus" size={12} /> {r.commuteMin}–{r.commuteAvg} min
+                      <Icon name="bus" size={12} />{" "}
+                      {noTransitNear({ via: r.via[0] ?? "", commuteMin: r.commuteMin })
+                        ? "sem ônibus por perto"
+                        : `${r.commuteMin}–${r.commuteAvg} min`}
                       {Object.entries(r.featureDist).map(([k, d]) => (
                         <span key={k} className="rfeat" title={p.features.find((x) => x.id === k)?.label}>
                           <Icon name={FEATURE_ICON[k] ?? "pin"} size={12} /> {meters(d)}
@@ -507,7 +523,7 @@ export function ResultsPanel(p: Props) {
                       ))}
                     </span>
                   </button>
-                  <span className="score" title="Nota da região">
+                  <span className="score" title="Nota da região (prioridades atingidas)">
                     {r.score.toFixed(0)}
                   </span>
                 </li>

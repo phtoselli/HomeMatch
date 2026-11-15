@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useEscape } from "@/shared/hooks/useEscape";
-import type { FeatureDef } from "@homematch/contracts";
-import type { CellBand, LineSummary } from "@homematch/domain";
+import type { FeatureDef, RegionLevel } from "@homematch/contracts";
+import type { LineSummary } from "@homematch/domain";
 import { CloseButton, FEATURE_ICON, Icon, Switch } from "@/shared/ui";
 import { DEFAULT_MAP_SETTINGS, type MapSettings } from "../model/settings";
 
@@ -10,8 +10,9 @@ interface Props {
   setSettings: (s: MapSettings) => void;
   /** Lugares pedidos na busca (os que aparecem no mapa). */
   features: FeatureDef[];
-  /** Nota mínima de uma área "ótima" nesta busca (Infinity sem análise). */
-  greatFrom: number;
+  /** Nível mínimo das regiões mostradas (vale também para a lista de imóveis). */
+  minLevel: RegionLevel;
+  setMinLevel: (l: RegionLevel) => void;
   hasAnalysis: boolean;
   myLinesCount: number;
   /** Linhas no mapa (da análise e as que você adicionou), uma por número. */
@@ -20,10 +21,10 @@ interface Props {
   onClose: () => void;
 }
 
-const BANDS: [CellBand, string][] = [
-  ["great", "Ótimas"],
-  ["ok", "OK"],
-  ["both", "Ambas"],
+const LEVELS: [RegionLevel, string][] = [
+  ["ok", "Todas"],
+  ["boa", "Boa ou melhor"],
+  ["excelente", "Só excelentes"],
 ];
 
 function Toggle({
@@ -80,24 +81,17 @@ export function MapSettingsPanel(p: Props) {
 
       <section className="ms-sec">
         <h3>Regiões</h3>
-        <Toggle on={s.cells} label="Nota das regiões" hint={noAnalysis} onChange={(v) => set({ cells: v })} />
-        <div className="seg small ms-seg" role="group" aria-label="Quais notas mostrar">
-          {BANDS.map(([b, label]) => (
-            <button
-              key={b}
-              type="button"
-              aria-pressed={s.cellBand === b}
-              disabled={!s.cells}
-              onClick={() => set({ cellBand: b })}
-            >
+        <Toggle on={s.cells} label="Nível das regiões" hint={noAnalysis} onChange={(v) => set({ cells: v })} />
+        <div className="seg small ms-seg" role="group" aria-label="Quais regiões mostrar">
+          {LEVELS.map(([l, label]) => (
+            <button key={l} type="button" aria-pressed={p.minLevel === l} onClick={() => p.setMinLevel(l)}>
               {label}
             </button>
           ))}
         </div>
         <p className="ms-hint">
-          {s.cellBand === "ok"
-            ? "Só as áreas que atendem ao pedido, sem as melhores (e as que chegam perto)."
-            : `Ótima: o terço de cima entre as áreas que atendem a tudo${Number.isFinite(p.greatFrom) ? ` (nota ${Math.round(p.greatFrom)} ou mais)` : ""}.`}
+          Excelente: a sua prioridade principal e quase todo o resto. Boa: a principal. Ok: alguma coisa, mas não a
+          principal. Vale também para os imóveis da lista.
         </p>
         <Toggle
           on={s.badges}

@@ -10,13 +10,19 @@ Dois modos:
 **🔎 Explorar regiões**
 
 1. Escolha a **cidade** e marque o **trabalho** (endereço ou clique no mapa).
-2. Escolha o que precisa por perto (mercado grande/atacarejo, parque, academia, farmácia…) e o raio de cada um.
-3. **Analisar a cidade**:
-   - busca no OpenStreetMap as linhas de ônibus, metrô e trem com parada perto do trabalho;
+2. Escolha o que precisa por perto (mercado grande/atacarejo, parque, academia, farmácia…) e o raio de cada um, e
+   **o que é mais importante**: transporte até o trabalho e cada lugar como *principal*, *importante* ou *bom ter*
+   (sem carro, transporte como principal; com carro, "não uso").
+3. **Analisar a cidade** (sem tempo máximo):
+   - busca as linhas de ônibus, metrô e trem que chegam ao trabalho (operador oficial ou OpenStreetMap; se o trabalho
+     é em outra cidade, as intermunicipais e a baldeação no destino);
    - divide a cidade numa grade (500 m) e estima o tempo de cada pedaço até o trabalho
      (caminhada até a parada + espera + viagem + caminhada final);
-   - mantém só as áreas que têm **tudo** o que você pediu dentro do raio;
-   - dá nota (trajeto × proximidade, peso ajustável) e ranqueia os bairros.
+   - dá a cada área um **nível**: *excelente* (a prioridade principal e quase todo o resto), *boa* (a principal) ou
+     *ok* (outra coisa, mas não a principal). O transporte conta como atingido até o melhor tempo da cidade + 50%
+     (nunca menos que 40 min) ou perto de uma linha que você escolheu;
+   - ranqueia os bairros pelo nível e pela soma dos pesos atingidos. Imóveis só aparecem nessas regiões, e o card
+     mostra o tempo até o trabalho.
 4. **Buscar imóveis** nas regiões marcadas, em vários sites ao mesmo tempo: portais (QuintoAndar, Chaves na Mão,
    ZAP, VivaReal, Lopes, OLX) e as **imobiliárias da cidade**, achadas no OpenStreetMap ao escolher a cidade
    (as que publicam os anúncios em schema.org são lidas pela extensão genérica). Mostra tudo no mapa. Dá para filtrar por tipo, preço

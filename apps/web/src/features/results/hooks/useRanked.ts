@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo } from "react";
 import { create } from "zustand";
 import type { Cell, LatLng, Listing } from "@homematch/contracts";
 import {
+  atLeast,
   distance,
   makeCellLookup,
   matchScore,
@@ -24,13 +25,18 @@ export const useRegionTab = create<{ tab: string; setTab: (t: string) => void }>
   setTab: (tab) => set({ tab }),
 }));
 
-/** Célula analisada de um ponto: a exata ou, até ~800 m além das regiões, a vizinha mais a caminhada até ela. */
+/**
+ * Área analisada de um ponto, só entre as regiões do nível escolhido (ou melhor): a exata ou a vizinha (anúncio com
+ * posição aproximada), somando a caminhada até ela. Fora delas, o imóvel não aparece.
+ */
 function useCellLookup() {
   const analysis = useSearchStore((s) => s.analysis);
+  const minLevel = useSearchStore((s) => s.minLevel);
   return useMemo(() => {
     if (!analysis) return null;
-    const exact = makeCellLookup(analysis.cells, analysis.cellSizeM);
-    const wide = makeCellLookup(analysis.cells, analysis.cellSizeM, analysis.cellSizeM * 0.75 + 900);
+    const cells = analysis.cells.filter((c) => atLeast(c.level, minLevel));
+    const exact = makeCellLookup(cells, analysis.cellSizeM);
+    const wide = makeCellLookup(cells, analysis.cellSizeM, analysis.cellSizeM * 1.25);
     return (l: LatLng): Cell | undefined => {
       const c = exact(l);
       if (c) return c;
@@ -39,7 +45,7 @@ function useCellLookup() {
       const extra = Math.max(0, distance(l, near) - analysis.cellSizeM / 2);
       return { ...near, commuteMin: near.commuteMin + walkMin(extra) };
     };
-  }, [analysis]);
+  }, [analysis, minLevel]);
 }
 
 /**
@@ -48,7 +54,8 @@ function useCellLookup() {
  */
 export function useRanked() {
   const { listings, filters, chosen, searchedRegions } = useSearchStore();
-  const maxMin = useSearchStore((s) => s.params.maxCommuteMin);
+  const stats = useSearchStore((s) => s.analysis?.stats);
+  const ref = useMemo(() => ({ bestMin: stats?.commuteBestMin ?? 20, refMin: stats?.commuteRefMin ?? 45 }), [stats]);
   const favMap = useFavorites((s) => s.favorites);
   const listMode = useFavorites((s) => s.listMode);
   const linkResults = useLinks((s) => s.results);
@@ -68,14 +75,21 @@ export function useRanked() {
     (l: Listing): Ranked => {
       const cell = lookup?.(l);
       // Sem análise (só links colados) não dá para julgar trajeto nem o que tem perto.
-      const misses = lookup ? missesOf(l, cell, filters, maxMin, nearWants) : [];
-      return { l, cell, match: matchScore(l, cell, filters, maxMin), misses };
+      const misses = lookup ? missesOf(l, cell, filters, nearWants) : [];
+      return { l, cell, match: matchScore(l, cell, filters, ref), misses };
     },
-    [lookup, filters, maxMin, nearWants],
+    [lookup, filters, ref, nearWants],
   );
+  // Só os imóveis dentro das regiões com nível (sem análise, nada a filtrar).
   const ranked = useMemo(
-    () => sortRanked(visibleListings(listings, filters).map(rank), filters),
-    [listings, filters, rank],
+    () =>
+      sortRanked(
+        visibleListings(listings, filters)
+          .map(rank)
+          .filter((x) => !lookup || x.cell),
+        filters,
+      ),
+    [listings, filters, rank, lookup],
   );
   const inTab = useMemo(() => (tab === "all" ? ranked : ranked.filter((x) => x.l.region === tab)), [ranked, tab]);
   // Favoritos: o anúncio mais novo da busca (se veio de novo) ou o guardado.

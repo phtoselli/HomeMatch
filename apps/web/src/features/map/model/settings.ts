@@ -1,12 +1,10 @@
 import { create } from "zustand";
-import type { CellBand } from "@homematch/domain";
 import { persistFields, readSaved } from "@/shared/lib/persist";
 
 /** O que o mapa mostra (salvo no navegador). */
 export interface MapSettings {
-  /** Quadradinhos coloridos com a nota de cada área. */
+  /** Quadradinhos coloridos com o nível de cada área (excelente, boa, ok). */
   cells: boolean;
-  cellBand: CellBand;
   /** Nomes numerados das melhores regiões. */
   badges: boolean;
   /** Linhas de ônibus que a análise usou para chegar ao trabalho. */
@@ -29,7 +27,6 @@ export interface MapSettings {
 
 export const DEFAULT_MAP_SETTINGS: MapSettings = {
   cells: true,
-  cellBand: "both",
   badges: true,
   routes: true,
   myLines: true,
@@ -46,7 +43,8 @@ export const DEFAULT_MAP_SETTINGS: MapSettings = {
 /** Configurações salvas de versões antigas (só 4 camadas) continuam valendo. */
 export function normalizeMapSettings(s: Partial<MapSettings> | null | undefined): MapSettings {
   const out = { ...DEFAULT_MAP_SETTINGS, ...(s ?? {}) };
-  if (!["great", "ok", "both"].includes(out.cellBand)) out.cellBand = "both";
+  // Versões antigas tinham a faixa de nota (ótimas/ok); agora o nível mínimo mora na busca.
+  delete (out as Partial<MapSettings> & { cellBand?: unknown }).cellBand;
   if (!Array.isArray(out.hiddenPois)) out.hiddenPois = [];
   if (!Array.isArray(out.hiddenLines)) out.hiddenLines = [];
   return out;

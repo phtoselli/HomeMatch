@@ -1,6 +1,6 @@
 import type {
   AnalysisResult,
-  AnalyzeRequest,
+  AnalyzeInput,
   BBox,
   BusLine,
   CityRef,
@@ -60,7 +60,7 @@ export const api = {
     return getJson<PlaceResult[]>(`/api/geocode?${p}`);
   },
   reverse: (p: LatLng) => getJson<PlaceResult | null>(`/api/reverse?lat=${p.lat}&lng=${p.lng}`),
-  analyze: (req: AnalyzeRequest, on: (ev: StreamEvent<AnalysisResult>) => void) =>
+  analyze: (req: AnalyzeInput, on: (ev: StreamEvent<AnalysisResult>) => void) =>
     streamPost<AnalysisResult>("/api/analyze", req, on),
   listings: (req: ListingsRequest, on: (ev: StreamEvent<Listing[]>) => void) =>
     streamPost<Listing[]>("/api/listings", req, on),

@@ -1,20 +1,32 @@
-import type { BBox, Cell, FeatureRequest, LatLng, Poi, Polygon, Region } from "@homematch/contracts";
-import { PointIndex, bboxOf, gridCenters, inBBox, inMultiPolygon, padBBox } from "../geo.js";
+import type { BBox, Cell, FeatureRequest, LatLng, Poi, Polygon, Region, RegionLevel } from "@homematch/contracts";
+import { PointIndex, bboxOf, gridCenters, inMultiPolygon, padBBox } from "../geo.js";
 import { commuteFrom, genericBusCommute, type BoardingStop, type Commute } from "../transit/model.js";
 import { hubCommute, type Hub } from "../transit/intercity.js";
+import {
+  IMPORTANCE,
+  TRANSIT_CRITERION,
+  commuteRef,
+  criteriaScore,
+  levelOf,
+  levelRank,
+  type CriterionResult,
+} from "./levels.js";
 
 export interface GridInput {
   bbox: BBox;
   boundary?: Polygon[];
   work: LatLng;
   cellSizeM: number;
-  maxCommuteMin: number;
   maxWalkToStopM: number;
-  commuteWeight: number;
+  /** Importância do transporte até o trabalho (0 = não conta). */
+  transitWeight: number;
+  /** Lugares que a pessoa quer perto, com raio e importância. */
   features: FeatureRequest[];
   pois: Record<string, Poi[]>;
   stops: BoardingStop[];
   places: { lat: number; lng: number; name: string; rank: number }[];
+  /** Pontos das linhas que a pessoa escolheu: perto deles, o transporte conta como atingido. */
+  preferredStops?: LatLng[];
   /** Sem linhas mapeadas: ônibus estimado entre pontos. `intercity` = o trabalho fica em outra cidade. */
   fallback?: { busStops: LatLng[]; workStopDistM: number; intercity?: boolean };
   /**
@@ -22,29 +34,35 @@ export interface GridInput {
    * Com eles, o intermunicipal estimado vai até o terminal (e não até a porta do trabalho). Usa `fallback.busStops`.
    */
   hubs?: Hub[];
-  /** Mantém também o que passa por pouco (ver AnalyzeRequest.flex). */
-  flex?: boolean;
 }
 
 export interface GridOutput {
+  /** Só as áreas com nível (as outras não entram na busca de imóveis). */
   cells: Cell[];
   cellsTotal: number;
-  cellsReachable: number;
-  /** Quantas das células mantidas atendem a tudo (sem flex, todas). */
-  cellsMatching: number;
+  levels: Record<RegionLevel, number>;
+  commuteBestMin: number;
+  commuteRefMin: number;
   /** Terminais (`Hub.id`) que alguma célula mantida usa. */
   hubsUsed: string[];
 }
 
-/** Busca flexível: quanto além do pedido ainda entra como "quase lá". */
-export const FLEX = { extraMin: 15, radiusFactor: 2, maxMisses: 2, penalty: 0.7 };
+/** Até onde guardar a distância de um lugar além do raio pedido (para o card dizer "parque a 2,1 km"). */
+const INFO_REACH = 3;
 
-/** Tempo máximo que a análise considera (com a folga da busca flexível). */
-export const commuteLimit = (maxCommuteMin: number, flex?: boolean) => maxCommuteMin + (flex ? FLEX.extraMin : 0);
+/** Critérios da busca, na ordem: transporte primeiro (ganha no empate de peso), depois os lugares. */
+export function criteriaOf(transitWeight: number, features: FeatureRequest[]): { id: string; weight: number }[] {
+  const out = [
+    ...(transitWeight > 0 ? [{ id: TRANSIT_CRITERION, weight: transitWeight }] : []),
+    ...features.map((f) => ({ id: f.id, weight: f.weight })),
+  ];
+  // Sem nada pedido, o transporte decide (senão nenhuma região teria nível).
+  return out.length ? out : [{ id: TRANSIT_CRITERION, weight: IMPORTANCE.main }];
+}
 
 /**
- * Parte pura da análise: percorre a grade, calcula o trajeto e a distância até cada
- * característica, mantém só as células que atendem a TUDO e dá uma nota de 0 a 100.
+ * Parte pura da análise: percorre a cidade inteira, calcula o tempo até o trabalho (sem limite) e a distância até
+ * cada lugar pedido, e dá a cada área um nível (excelente, boa, ok ou fora) pelas prioridades da pessoa.
  */
 export function scoreGrid(input: GridInput): GridOutput {
   const { work, features } = input;
@@ -54,18 +72,15 @@ export function scoreGrid(input: GridInput): GridOutput {
   );
   const placeIdx = new PointIndex(input.places, 2000, work.lat);
   const fbIdx = input.fallback ? new PointIndex(input.fallback.busStops, 500, work.lat) : null;
+  const prefIdx = input.preferredStops?.length ? new PointIndex(input.preferredStops, 500, work.lat) : null;
   const hubs = input.hubs ?? [];
-  const hubsUsed = new Set<string>();
+  const criteria = criteriaOf(input.transitWeight, features);
 
-  const centers = gridCenters(input.bbox, input.cellSizeM);
-  const cells: Cell[] = [];
-  let reachable = 0;
-  let matching = 0;
-  const flex = !!input.flex;
-  const limit = commuteLimit(input.maxCommuteMin, flex);
-  const reach = (r: number) => (flex ? r * FLEX.radiusFactor : r);
-  for (const c of centers) {
-    if (input.boundary && !inMultiPolygon(c, input.boundary)) continue;
+  // 1ª passada: tempo até o trabalho de cada área (o melhor da cidade define o que é "bem servido").
+  const centers = gridCenters(input.bbox, input.cellSizeM).filter(
+    (c) => !input.boundary || inMultiPolygon(c, input.boundary),
+  );
+  const commutes = centers.map((c) => {
     let commute: Commute & { hubId?: string } = commuteFrom(c, work, stopIdx, input.maxWalkToStopM);
     if (fbIdx && hubs.length) {
       const h = hubCommute(c, fbIdx, hubs, input.maxWalkToStopM);
@@ -82,28 +97,39 @@ export function scoreGrid(input: GridInput): GridOutput {
       );
       if (g && g.minutes < commute.minutes) commute = g;
     }
-    if (commute.minutes > limit) continue;
-    if (commute.minutes <= input.maxCommuteMin) reachable++;
+    return commute;
+  });
+  const best = commutes.reduce((m, c) => Math.min(m, c.minutes), Infinity);
+  const ref = commuteRef(best);
 
-    // Sem flex, falta qualquer coisa = fora. Com flex, cada falta só pesa na nota (até FLEX.maxMisses).
-    let misses = commute.minutes > input.maxCommuteMin ? 1 : 0;
+  // 2ª passada: critérios atingidos, nível e nota.
+  const cells: Cell[] = [];
+  const levels: Record<RegionLevel, number> = { excelente: 0, boa: 0, ok: 0 };
+  const hubsUsed = new Set<string>();
+  centers.forEach((c, i) => {
+    const commute = commutes[i]!;
+    const results: CriterionResult[] = [];
     const featureDist: Record<string, number> = {};
-    let amenity = 0;
-    for (const f of features) {
-      const near = poiIdx[f.id]!.nearest(c, reach(f.radius));
+    for (const cr of criteria) {
+      if (cr.id === TRANSIT_CRITERION) {
+        const t = commute.minutes;
+        const inTime = t <= ref;
+        const nearLine = !!prefIdx?.nearest(c, input.maxWalkToStopM);
+        let fit = inTime ? 0.5 + 0.5 * Math.max(0, Math.min(1, (ref - t) / Math.max(1, ref - best))) : 0;
+        if (nearLine) fit = Math.max(fit, 0.85);
+        results.push({ id: cr.id, weight: cr.weight, hit: inTime || nearLine, fit });
+        continue;
+      }
+      const f = features.find((x) => x.id === cr.id)!;
+      const near = poiIdx[f.id]!.nearest(c, f.radius * INFO_REACH);
       if (near) featureDist[f.id] = Math.round(near.dist);
-      if (near && near.dist <= f.radius) amenity += 1 - near.dist / f.radius;
-      else misses++;
-      if (!flex && misses) break;
+      const hit = !!near && near.dist <= f.radius;
+      results.push({ id: f.id, weight: cr.weight, hit, fit: hit ? 1 - (0.5 * near!.dist) / f.radius : 0 });
     }
-    if (misses > (flex ? FLEX.maxMisses : 0)) continue;
-    if (!misses) matching++;
+    const level = levelOf(results);
+    if (!level) return;
+    levels[level]++;
     if (commute.hubId) hubsUsed.add(commute.hubId);
-
-    const amenityScore = features.length ? amenity / features.length : 1;
-    const commuteScore = Math.max(0, 1 - commute.minutes / input.maxCommuteMin);
-    const w = features.length ? input.commuteWeight : 1;
-    const score = 100 * (w * commuteScore + (1 - w) * amenityScore) * FLEX.penalty ** misses;
 
     // Nome do bairro: o place mais "importante" (suburb > quarter > neighbourhood) entre os mais próximos.
     const nearPlaces = placeIdx.within(c, 2500).sort((a, b) => a.dist - b.dist);
@@ -119,21 +145,23 @@ export function scoreGrid(input: GridInput): GridOutput {
       via: commute.via,
       routeId: commute.routeId,
       featureDist,
-      score: Math.round(score * 10) / 10,
+      score: criteriaScore(results),
       region: place,
-      ...(flex ? { misses } : {}),
+      level,
+      hits: results.filter((r) => r.hit).map((r) => r.id),
     });
-  }
+  });
   return {
     cells,
     cellsTotal: centers.length,
-    cellsReachable: reachable,
-    cellsMatching: matching,
+    levels,
+    commuteBestMin: Number.isFinite(best) ? Math.round(best) : 0,
+    commuteRefMin: ref,
     hubsUsed: [...hubsUsed],
   };
 }
 
-/** Agrupa as células por bairro e ordena (média das 3 melhores notas). */
+/** Agrupa as células por bairro e ordena: primeiro o nível (o melhor da região), depois a nota. */
 export function rankRegions(cells: Cell[], cellSizeM: number): Region[] {
   const groups = new Map<string, Cell[]>();
   for (const c of cells) {
@@ -143,8 +171,10 @@ export function rankRegions(cells: Cell[], cellSizeM: number): Region[] {
   }
   const regions: Omit<Region, "rank">[] = [];
   for (const [name, cs] of groups) {
-    cs.sort((a, b) => b.score - a.score);
-    const top = cs.slice(0, 3);
+    cs.sort((a, b) => levelRank(b.level) - levelRank(a.level) || b.score - a.score);
+    const bestCell = cs[0]!;
+    // A nota da região vem das melhores áreas do melhor nível dela.
+    const top = cs.filter((c) => c.level === bestCell.level).slice(0, 3);
     const via = new Map<string, number>();
     for (const c of cs) via.set(c.via, (via.get(c.via) ?? 0) + 1);
     const featureDist: Record<string, number> = {};
@@ -168,26 +198,10 @@ export function rankRegions(cells: Cell[], cellSizeM: number): Region[] {
         .slice(0, 4)
         .map(([v]) => v),
       featureDist,
-      ...(cs.some((c) => c.misses != null) ? { misses: Math.min(...cs.map((c) => c.misses ?? 0)) } : {}),
+      level: bestCell.level,
+      hits: bestCell.hits,
     });
   }
-  // Primeiro as regiões que atendem a tudo; depois as que chegam perto (busca flexível).
-  regions.sort((a, b) => (a.misses ?? 0) - (b.misses ?? 0) || b.score - a.score || a.commuteMin - b.commuteMin);
+  regions.sort((a, b) => levelRank(b.level) - levelRank(a.level) || b.score - a.score || a.commuteMin - b.commuteMin);
   return regions.map((r, i) => ({ ...r, rank: i + 1 }));
-}
-
-/** Limita a área de análise: bbox da cidade, cortada a um raio razoável em volta do trabalho. */
-export function analysisBBox(cityBBox: BBox, work: LatLng, maxCommuteMin: number): BBox {
-  // Trabalho em outra cidade: o ônibus intermunicipal anda por rodovia e o recorte abaixo poderia sobrar vazio.
-  // A cidade inteira entra; o tempo de trajeto de cada pedaço já descarta o que não dá.
-  if (!inBBox(work, cityBBox)) return cityBBox;
-  // Nenhum transporte urbano direto passa de ~35 km/h de média: corta o que é inalcançável.
-  const reachM = Math.min(40_000, (maxCommuteMin / 60) * 35_000);
-  const around = padBBox({ south: work.lat, north: work.lat, west: work.lng, east: work.lng }, reachM);
-  return {
-    south: Math.max(cityBBox.south, around.south),
-    north: Math.min(cityBBox.north, around.north),
-    west: Math.max(cityBBox.west, around.west),
-    east: Math.min(cityBBox.east, around.east),
-  };
 }

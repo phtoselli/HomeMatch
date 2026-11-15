@@ -8,6 +8,7 @@ export * from "./transit/intercity.js";
 export * from "./transit/lines.js";
 export * from "./transit/timetable.js";
 export * from "./analysis/grid.js";
+export * from "./analysis/levels.js";
 export * from "./search/listing-filters.js";
 export * from "./search/criteria.js";
 export * from "./search/ranking.js";

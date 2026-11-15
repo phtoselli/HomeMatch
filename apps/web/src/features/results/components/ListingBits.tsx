@@ -1,5 +1,13 @@
 import type { Cell, Listing } from "@homematch/contracts";
-import { AMENITY_FILTERS, AMENITY_LABEL, hasAmenity, money, priceOf, type Filters } from "@homematch/domain";
+import {
+  AMENITY_FILTERS,
+  AMENITY_LABEL,
+  hasAmenity,
+  money,
+  priceOf,
+  type Filters,
+  noTransitNear,
+} from "@homematch/domain";
 import { Icon } from "@/shared/ui";
 
 /** "Ônibus 350 + Ônibus 353" → "350 + 353"; "a pé" fica igual. */
@@ -50,7 +58,13 @@ export function CommuteChip({ cell }: { cell?: Cell }) {
   if (!cell)
     return (
       <span className="chip-mini muted-chip">
-        <Icon name="bus" size={13} /> fora da área analisada
+        <Icon name="bus" size={13} /> fora das regiões recomendadas
+      </span>
+    );
+  if (noTransitNear(cell))
+    return (
+      <span className="chip-mini muted-chip">
+        <Icon name="bus" size={13} /> sem ônibus por perto
       </span>
     );
   return (

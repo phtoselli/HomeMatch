@@ -1,13 +1,18 @@
 import { create } from "zustand";
-import type { AnalysisResult, BBox, City, LatLng, Listing, Region, SourceId } from "@homematch/contracts";
+import type { AnalysisResult, BBox, City, LatLng, Listing, Region, RegionLevel, SourceId } from "@homematch/contracts";
 import {
   DEFAULT_FILTERS,
   DEFAULT_PARAMS,
+  IMPORTANCE,
+  TRANSIT_CRITERION,
+  atLeast,
   diagnose,
   normalizeFilters,
+  normalizeParams,
   wideFilters,
   type Diagnosis,
   type Filters,
+  type Importance,
   type Params,
 } from "@homematch/domain";
 import { api } from "@/shared/api/client";
@@ -26,8 +31,51 @@ export interface RunAllArgs {
   work: LatLng;
   sources: SourceId[];
   onFit: (b: BBox) => void;
-  /** Muda um parâmetro antes de buscar (ex.: "tentar com 60 min"). */
-  override?: Partial<Params>;
+  /** Pontos das linhas que a pessoa adicionou (perto deles, o transporte conta como atingido). */
+  preferredStops?: [number, number][];
+}
+
+/**
+ * Importância de cada critério ("transporte" e ids dos lugares): 3 = principal (só um), 2 = importante,
+ * 1 = bom ter; o transporte também pode ser 0 (não uso, tenho carro).
+ */
+export type Priorities = Record<string, Importance | 0>;
+
+export const DEFAULT_PRIORITIES: Priorities = { [TRANSIT_CRITERION]: IMPORTANCE.main };
+
+/** Importância de um critério (lugar sem valor salvo = importante; transporte sem valor = principal). */
+export function importanceOf(p: Priorities, id: string): Importance | 0 {
+  const v = p[id];
+  if (v != null) return v;
+  return id === TRANSIT_CRITERION ? IMPORTANCE.main : IMPORTANCE.important;
+}
+
+/**
+ * Muda a importância de um critério. Só um é principal: escolher outro rebaixa o anterior para "importante".
+ * `ids` são os critérios em uso (transporte e lugares escolhidos).
+ */
+export function setImportance(p: Priorities, ids: string[], id: string, v: Importance | 0): Priorities {
+  const out: Priorities = { ...p, [id]: v };
+  if (v === IMPORTANCE.main)
+    for (const other of ids) if (other !== id && importanceOf(out, other) === IMPORTANCE.main) out[other] = 2;
+  // Tirou o principal: o próximo critério de maior importância assume (sempre há um principal à vista).
+  if (!ids.some((x) => importanceOf(out, x) === IMPORTANCE.main)) {
+    const next =
+      mainOf(
+        out,
+        ids.filter((x) => x !== id),
+      ) ?? (v > 0 ? id : undefined);
+    if (next) out[next] = IMPORTANCE.main;
+  }
+  return out;
+}
+
+/** O critério principal entre os em uso (o primeiro com a maior importância). */
+export function mainOf(p: Priorities, ids: string[]): string | undefined {
+  let best: string | undefined;
+  for (const id of ids)
+    if (importanceOf(p, id) > 0 && (!best || importanceOf(p, id) > importanceOf(p, best))) best = id;
+  return best;
 }
 
 interface SearchState {
@@ -35,6 +83,9 @@ interface SearchState {
   /** Característica → raio em metros (o que quer perto de casa). */
   chosen: Record<string, number>;
   params: Params;
+  priorities: Priorities;
+  /** Nível mínimo das regiões que aparecem (no mapa, na lista de regiões e nos imóveis). */
+  minLevel: RegionLevel;
   filters: Filters;
   /** Fontes desmarcadas: as novas que aparecerem na cidade entram marcadas. */
   disabledSources: SourceId[];
@@ -57,6 +108,8 @@ interface SearchState {
 
   setChosen: (c: Record<string, number>) => void;
   setParams: (p: Params) => void;
+  setPriorities: (p: Priorities) => void;
+  setMinLevel: (l: RegionLevel) => void;
   setFilters: (f: Filters) => void;
   setSourceEnabled: (id: SourceId, on: boolean) => void;
   setMaxPerRegion: (n: number) => void;
@@ -99,7 +152,9 @@ export const useSearchStore = create<SearchState>()((set, get) => {
 
   return {
     chosen: readSaved("features", { atacarejo: 2000, parque: 1500 }),
-    params: readSaved("params", DEFAULT_PARAMS),
+    params: normalizeParams(readSaved<Partial<Params>>("params", DEFAULT_PARAMS)),
+    priorities: readSaved("priorities", DEFAULT_PRIORITIES),
+    minLevel: readSaved<RegionLevel>("minLevel", "ok"),
     filters: normalizeFilters(readSaved<Partial<Filters>>("filters", DEFAULT_FILTERS)),
     disabledSources: readSaved<SourceId[]>("disabledSources", []),
     maxPerRegion: readSaved("maxPerRegion", 100),
@@ -109,6 +164,8 @@ export const useSearchStore = create<SearchState>()((set, get) => {
 
     setChosen: (chosen) => set({ chosen }),
     setParams: (params) => set({ params }),
+    setPriorities: (priorities) => set({ priorities }),
+    setMinLevel: (minLevel) => set({ minLevel }),
     setFilters: (filters) => set({ filters: normalizeFilters(filters) }),
     setSourceEnabled: (id, on) =>
       set(({ disabledSources: d }) => ({ disabledSources: on ? d.filter((x) => x !== id) : [...new Set([...d, id])] })),
@@ -173,26 +230,35 @@ export const useSearchStore = create<SearchState>()((set, get) => {
     },
 
     /** Acha as regiões e já busca os imóveis nas melhores. */
-    async runAll({ city, work, sources, onFit, override }) {
-      const params = { ...get().params, ...override };
+    async runAll({ city, work, sources, onFit, preferredStops }) {
+      const { params, priorities, chosen } = get();
       // O mapa anterior fica na tela até a nova análise chegar.
       const { analysis, searchedWith } = get();
-      set({ ...EMPTY_RESULTS, analysis, searchedWith, params, busy: "analyze" });
-      const features = Object.entries(get().chosen).map(([id, radius]) => ({ id, radius }));
+      set({ ...EMPTY_RESULTS, analysis, searchedWith, busy: "analyze" });
+      const features = Object.entries(chosen).map(([id, radius]) => ({
+        id,
+        radius,
+        weight: Math.max(1, importanceOf(priorities, id)),
+      }));
+      const transitWeight = importanceOf(priorities, TRANSIT_CRITERION);
       let res: AnalysisResult;
       try {
-        res = await api.analyze({ city, work, features, ...params, flex: true }, onProgress);
+        res = await api.analyze(
+          { city, work, features, transitWeight, preferredStops: preferredStops?.slice(0, 5000), ...params },
+          onProgress,
+        );
       } catch (e) {
         set({ error: (e as Error).message, busy: null });
         return;
       }
-      const top = res.regions.slice(0, TOP_REGIONS);
-      const more = res.regions.slice(TOP_REGIONS, MAX_REGIONS);
+      // Só as regiões do nível escolhido (ou melhor) entram na busca de imóveis.
+      const eligible = res.regions.filter((r) => atLeast(r.level, get().minLevel));
+      const top = eligible.slice(0, TOP_REGIONS);
+      const more = eligible.slice(TOP_REGIONS, MAX_REGIONS);
       set({ analysis: res, selectedRegions: new Set(top.map((r) => r.id)) });
-      const exact = res.regions.filter((r) => !r.misses).length;
-      const near = res.regions.length - exact;
+      const n = (l: RegionLevel) => res.regions.filter((r) => r.level === l).length;
       say(
-        `${exact} ${exact === 1 ? "região atende" : "regiões atendem"} a tudo${near ? ` e ${near} chegam perto` : ""}.` +
+        `Regiões: ${n("excelente")} excelentes, ${n("boa")} boas e ${n("ok")} ok.` +
           (top.length ? ` Buscando imóveis nas ${top.length} melhores…` : ""),
       );
       if (res.cells.length) {
@@ -209,6 +275,8 @@ export const useSearchStore = create<SearchState>()((set, get) => {
 persistFields(useSearchStore, {
   chosen: "features",
   params: "params",
+  priorities: "priorities",
+  minLevel: "minLevel",
   filters: "filters",
   disabledSources: "disabledSources",
   maxPerRegion: "maxPerRegion",

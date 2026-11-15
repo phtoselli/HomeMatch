@@ -1,15 +1,21 @@
 import type { Listing, ListingFilters, PropertyType } from "@homematch/contracts";
 import { hasAmenity, matchesFilters, type MapFilters } from "./listing-filters.js";
 
-/** Parâmetros da análise de regiões. */
+/** Parâmetros da análise de regiões (não há mais tempo máximo: as regiões têm nível pelas prioridades). */
 export interface Params {
-  maxCommuteMin: number;
   maxWalkToStopM: number;
   cellSizeM: number;
-  commuteWeight: number;
 }
 
-export const DEFAULT_PARAMS: Params = { maxCommuteMin: 45, maxWalkToStopM: 600, cellSizeM: 500, commuteWeight: 0.7 };
+export const DEFAULT_PARAMS: Params = { maxWalkToStopM: 600, cellSizeM: 500 };
+
+/** Parâmetros salvos de versões antigas (com tempo máximo e peso do trajeto) continuam valendo. */
+export function normalizeParams(p: Partial<Params> & Record<string, unknown>): Params {
+  return {
+    maxWalkToStopM: Number(p.maxWalkToStopM) || DEFAULT_PARAMS.maxWalkToStopM,
+    cellSizeM: Number(p.cellSizeM) || DEFAULT_PARAMS.cellSizeM,
+  };
+}
 
 export type SortKey = "match" | "price" | "commute" | "area";
 

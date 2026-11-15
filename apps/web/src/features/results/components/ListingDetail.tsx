@@ -13,6 +13,9 @@ import {
   walkMin,
   type Filters,
   type Ranked,
+  LEVEL_LABEL,
+  type CommuteRef,
+  noTransitNear,
 } from "@homematch/domain";
 import { ExternalLink, FEATURE_ICON, Icon, type IconName, Photo } from "@/shared/ui";
 import { sourceName } from "@/shared/lib/format";
@@ -22,7 +25,8 @@ import { bestStop } from "./PreviewCard";
 interface Props {
   item: Ranked;
   filters: Filters;
-  maxCommuteMin: number;
+  /** Melhor tempo da cidade e até quanto o transporte conta como atingido (da análise). */
+  commuteRef: CommuteRef | null;
   features: FeatureDef[];
   chosen: Record<string, number>;
   busLines: BusLine[];
@@ -44,7 +48,7 @@ const STATUS: Record<Status, { icon: IconName; tag: string }> = {
 export function ListingDetail({
   item: { l, cell, match },
   filters: f,
-  maxCommuteMin,
+  commuteRef,
   features,
   chosen,
   busLines,
@@ -64,17 +68,30 @@ export function ListingDetail({
   const checks: { s: Status; label: string; detail: string }[] = [];
   if (cell) {
     checks.push({
-      s: cell.commuteMin <= maxCommuteMin ? "yes" : "warn",
-      label: `Até ${maxCommuteMin} min do trabalho`,
-      detail: `~${cell.commuteMin} min ${cell.via === "a pé" ? "a pé" : `pela linha ${shortVia(cell.via)}`}.`,
+      s: cell.level === "excelente" ? "yes" : cell.level === "boa" ? "yes" : "warn",
+      label: `Região ${LEVEL_LABEL[cell.level].toLowerCase()}`,
+      detail:
+        cell.level === "excelente"
+          ? "Atinge a sua prioridade principal e quase todo o resto."
+          : cell.level === "boa"
+            ? "Atinge a sua prioridade principal."
+            : "Atinge parte do que você pediu, mas não a prioridade principal.",
+    });
+    const ref = commuteRef?.refMin;
+    checks.push({
+      s: ref == null || cell.commuteMin <= ref ? "yes" : "warn",
+      label: ref != null ? `Bem servido até o trabalho (até ${ref} min)` : "Tempo até o trabalho",
+      detail: noTransitNear(cell)
+        ? "Sem ônibus por perto: o único jeito calculado é a pé, longe demais."
+        : `~${cell.commuteMin} min ${cell.via === "a pé" ? "a pé" : `pela linha ${shortVia(cell.via)}`}.`,
     });
   } else {
     checks.push({
       s: "unk",
-      label: `Até ${maxCommuteMin} min do trabalho`,
+      label: "Região recomendada",
       detail: work
-        ? `Fora da área analisada. Fica a ${meters(distance(l, work))} do trabalho em linha reta.`
-        : "Fora da área analisada.",
+        ? `Fora das regiões recomendadas. Fica a ${meters(distance(l, work))} do trabalho em linha reta.`
+        : "Fora das regiões recomendadas.",
     });
   }
   if (f.budget && price) {

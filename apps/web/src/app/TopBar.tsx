@@ -1,5 +1,5 @@
 import type { City } from "@homematch/contracts";
-import { money, type Filters, type Params } from "@homematch/domain";
+import { money, type Filters } from "@homematch/domain";
 import { Icon, type IconName, Segmented } from "@/shared/ui";
 
 import type { Mode } from "./shell";
@@ -7,13 +7,16 @@ import type { Mode } from "./shell";
 interface Props {
   city: City | null;
   workLabel?: string;
-  params: Params;
+  /** Prioridade principal (transporte ou um lugar). */
+  mainLabel: string;
   filters: Filters;
   mode: Mode;
   setMode: (m: Mode) => void;
   linksCount: number;
   setupOpen: boolean;
   onEdit: (step: number) => void;
+  /** Apaga tudo o que foi salvo e volta ao padrão. */
+  onReset: () => void;
 }
 
 /** Barra do topo: a busca resumida (cada parte abre o passo certo) e a troca entre imóveis e links. */
@@ -27,7 +30,7 @@ export function TopBar(p: Props) {
       step: 0,
     },
     { icon: "brief", label: "Trabalho", value: p.workLabel ? p.workLabel.split(",")[0]! : "marcar", step: 0 },
-    { icon: "clock", label: "Trajeto", value: `até ${p.params.maxCommuteMin} min`, step: 1 },
+    { icon: "star", label: "Prioridade", value: p.mainLabel, step: 1 },
     { icon: "wallet", label: p.filters.basis === "rent" ? "Aluguel" : "Total", value: budget, step: 1 },
   ];
   return (
@@ -63,6 +66,15 @@ export function TopBar(p: Props) {
             { value: "links", label: `Links e linhas${p.linksCount ? ` (${p.linksCount})` : ""}` },
           ]}
         />
+        <button
+          type="button"
+          className="btn ghost"
+          aria-label="Resetar tudo"
+          title="Apagar tudo e voltar ao padrão"
+          onClick={p.onReset}
+        >
+          <Icon name="refresh" /> <span>Resetar tudo</span>
+        </button>
         {!p.setupOpen && (
           <button type="button" className="btn" aria-label="Editar busca" onClick={() => p.onEdit(0)}>
             <Icon name="sliders" /> <span>Editar busca</span>

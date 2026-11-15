@@ -23,6 +23,15 @@ export function writeSaved(key: string, value: unknown): void {
   }
 }
 
+/** Apaga tudo o que o app guardou neste navegador (busca, prioridades, favoritos, links, linhas e mapa). */
+export function clearSaved(): void {
+  try {
+    for (const k of Object.keys(localStorage)) if (k.startsWith(PREFIX)) localStorage.removeItem(k);
+  } catch {
+    /* bloqueado: nada a apagar */
+  }
+}
+
 /** Grava os campos escolhidos do store sempre que mudam. `keys` diz a chave de cada campo. */
 export function persistFields<S>(store: StoreApi<S>, keys: Partial<Record<keyof S, string>>): void {
   store.subscribe((s, prev) => {

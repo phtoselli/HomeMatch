@@ -8,7 +8,8 @@ interface Props {
   setFilters: (f: Filters) => void;
   features: FeatureDef[];
   chosen: Record<string, number>;
-  maxCommuteMin: number;
+  /** Prioridade principal (transporte ou um lugar). */
+  mainLabel: string;
   onEdit: (step: number) => void;
 }
 
@@ -16,7 +17,7 @@ interface Props {
  * O pedido à vista, em uma linha. Os itens do imóvel (armário, pia…) ligam e desligam na hora, porque só
  * reordenam a lista; o resto abre a tela da busca.
  */
-export function FilterBar({ filters: f, setFilters, features, chosen, maxCommuteMin, onEdit }: Props) {
+export function FilterBar({ filters: f, setFilters, features, chosen, mainLabel, onEdit }: Props) {
   const toggleAmenity = (id: string) => {
     const has = (f.amenities ?? []).includes(id);
     setFilters({ ...f, amenities: has ? (f.amenities ?? []).filter((x) => x !== id) : [...(f.amenities ?? []), id] });
@@ -30,7 +31,7 @@ export function FilterBar({ filters: f, setFilters, features, chosen, maxCommute
         <Icon name="bed" size={15} /> {f.minBedrooms ? `${f.minBedrooms}+ quartos` : "Quartos: tanto faz"}
       </button>
       <button type="button" className="fchip" onClick={() => onEdit(0)}>
-        <Icon name="clock" size={15} /> Até {maxCommuteMin} min
+        <Icon name="star" size={15} /> Prioridade: {mainLabel}
       </button>
       {f.types.length > 0 && (
         <button type="button" className="fchip" onClick={() => onEdit(3)}>

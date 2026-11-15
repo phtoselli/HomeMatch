@@ -68,6 +68,22 @@ apps/api/src/
 └─ services/     análise das regiões (analysis, commute) e leitura dos links
 ```
 
+### Níveis das regiões (sem tempo máximo)
+
+Não há tempo máximo até o trabalho. A grade (`domain/analysis/grid.ts`) cobre a cidade inteira e cada área é
+julgada pelos critérios da pessoa (`domain/analysis/levels.ts`): transporte até o trabalho e cada lugar pedido,
+com peso 3 (principal), 2 (importante) ou 1 (bom ter).
+
+- **Excelente**: a principal foi atingida e pelo menos 75% do peso também. **Boa**: a principal. **Ok**: outra
+  coisa, mas não a principal. Nada atingido: a área fica de fora (e os imóveis dela não aparecem).
+- **Transporte atingido**: tempo até o trabalho até `commuteRef` (o melhor da cidade × 1,5, no mínimo 40 min) ou um
+  ponto de uma linha escolhida pela pessoa a uma caminhada. Assim, morando na cidade vizinha, as áreas mais bem
+  servidas ainda contam.
+- **Lugar atingido**: o mais próximo dentro do raio pedido.
+- A nota (0–100) soma os pesos atingidos, cada um pelo quão bem foi atingido, e ordena dentro do mesmo nível.
+
+No app, o nível mínimo ("Todas", "Boa ou melhor", "Só excelentes") vale para o mapa, a lista de regiões e os imóveis.
+
 ### Trabalho em outra cidade
 
 Quando o trabalho fica fora do município escolhido (`services/commute.ts`):
