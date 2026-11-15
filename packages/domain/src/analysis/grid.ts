@@ -6,6 +6,7 @@ import {
   IMPORTANCE,
   TRANSIT_CRITERION,
   commuteRef,
+  noTransitNear,
   criteriaScore,
   levelOf,
   levelRank,
@@ -99,7 +100,9 @@ export function scoreGrid(input: GridInput): GridOutput {
     }
     return commute;
   });
-  const best = commutes.reduce((m, c) => Math.min(m, c.minutes), Infinity);
+  // Caminhada longa (sem ônibus por perto) não é transporte: não conta para o melhor tempo nem como atingido.
+  const usable = (c: Commute) => !noTransitNear({ via: c.via, commuteMin: c.minutes });
+  const best = commutes.reduce((m, c) => (usable(c) ? Math.min(m, c.minutes) : m), Infinity);
   const ref = commuteRef(best);
 
   // 2ª passada: critérios atingidos, nível e nota.
@@ -113,7 +116,7 @@ export function scoreGrid(input: GridInput): GridOutput {
     for (const cr of criteria) {
       if (cr.id === TRANSIT_CRITERION) {
         const t = commute.minutes;
-        const inTime = t <= ref;
+        const inTime = t <= ref && usable(commute);
         const nearLine = !!prefIdx?.nearest(c, input.maxWalkToStopM);
         let fit = inTime ? 0.5 + 0.5 * Math.max(0, Math.min(1, (ref - t) / Math.max(1, ref - best))) : 0;
         if (nearLine) fit = Math.max(fit, 0.85);
@@ -193,10 +196,14 @@ export function rankRegions(cells: Cell[], cellSizeM: number): Region[] {
       commuteAvg: Math.round(cs.reduce((s, c) => s + c.commuteMin, 0) / cs.length),
       score: Math.round((top.reduce((s, c) => s + c.score, 0) / top.length) * 10) / 10,
       cellCount: cs.length,
-      via: [...via.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 4)
-        .map(([v]) => v),
+      // Primeiro o trajeto da melhor área (o que define o nível), depois os mais comuns.
+      via: [
+        bestCell.via,
+        ...[...via.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .map(([v]) => v)
+          .filter((v) => v !== bestCell.via),
+      ].slice(0, 4),
       featureDist,
       level: bestCell.level,
       hits: bestCell.hits,

@@ -1,5 +1,5 @@
 import { QueryClient, useQuery } from "@tanstack/react-query";
-import type { CityRef, FeatureDef } from "@homematch/contracts";
+import type { CityRef, FeatureDef, LatLng } from "@homematch/contracts";
 import { api } from "./client";
 
 /**
@@ -15,7 +15,7 @@ export const queryClient = new QueryClient({
 export const queryKeys = {
   features: ["features"] as const,
   sources: (cityId: string | undefined) => ["sources", cityId ?? null] as const,
-  operator: (cityId: string | undefined) => ["operator", cityId ?? null] as const,
+  operator: (cityId: string | undefined, work?: string | null) => ["operator", cityId ?? null, work ?? null] as const,
   timetable: (id: string | undefined) => ["timetable", id ?? null] as const,
 };
 
@@ -29,11 +29,11 @@ export const useFeatures = (): FeatureDef[] =>
 export const useSources = (city: Pick<CityRef, "osmId"> | null) =>
   useQuery({ queryKey: queryKeys.sources(city?.osmId), queryFn: () => api.sources(city), staleTime: 60 * 60_000 });
 
-/** Quem publica as linhas de ônibus da cidade (ex.: Campinas → EMDEC). */
-export const useOperator = (city: CityRef | null) =>
+/** Quem publica as linhas de ônibus da cidade, ou da cidade do trabalho (ex.: morando em Paulínia → EMDEC). */
+export const useOperator = (city: CityRef | null, work?: LatLng | null) =>
   useQuery({
-    queryKey: queryKeys.operator(city?.osmId),
-    queryFn: () => api.operator(city!),
+    queryKey: queryKeys.operator(city?.osmId, work ? `${work.lat.toFixed(3)},${work.lng.toFixed(3)}` : null),
+    queryFn: () => api.operator(city!, work),
     enabled: !!city,
     staleTime: Infinity,
   });

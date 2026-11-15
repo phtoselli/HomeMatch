@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useEscape } from "@/shared/hooks/useEscape";
 import type { FeatureDef, RegionLevel } from "@homematch/contracts";
-import type { LineSummary } from "@homematch/domain";
+import { type LineSummary, lineRoleLabel } from "@homematch/domain";
 import { CloseButton, FEATURE_ICON, Icon, Switch } from "@/shared/ui";
 import { DEFAULT_MAP_SETTINGS, type MapSettings } from "../model/settings";
 
@@ -161,11 +161,7 @@ export function MapSettingsPanel(p: Props) {
                       </span>
                       <span className="ms-label">
                         {l.name !== `Linha ${l.ref}` ? l.name : dest ? `Sentido ${dest}` : l.name}
-                        <small>
-                          {l.roles.includes("work") ? "leva ao trabalho" : ""}
-                          {l.roles.length > 1 ? " · " : ""}
-                          {l.roles.includes("mine") ? "você adicionou" : ""}
-                        </small>
+                        <small>{lineRoleLabel(l)}</small>
                       </span>
                     </label>
                   </li>

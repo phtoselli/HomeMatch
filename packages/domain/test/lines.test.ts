@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BusLine, TransitRoute } from "@homematch/contracts";
-import { dayLabelFor, nextDepartures, summarizeLines } from "../src/index.js";
+import { dayLabelFor, lineRoleLabel, nextDepartures, summarizeLines } from "../src/index.js";
 
 const route = (id: string, ref: string): TransitRoute => ({
   id,
@@ -71,5 +71,38 @@ describe("horários depois da meia-noite", () => {
     const times = ["22:54", "23:27", "00:00"];
     expect(nextDepartures(times, 23 * 60)).toEqual(["23:27", "00:00"]);
     expect(nextDepartures(["05:00", "06:00"], 23 * 60)).toEqual([]);
+  });
+});
+
+describe("ordem das linhas da análise", () => {
+  const route = (id: string, ref: string, kind?: "nearWork" | "intercity" | "estimated" | "feeder") => ({
+    id,
+    ref,
+    name: `Linha ${ref}`,
+    mode: "bus" as const,
+    color: "#000",
+    path: [[0, 0] as [number, number]],
+    kind,
+  });
+
+  it("primeiro as que passam perto do trabalho, depois intermunicipais, estimadas e de baldeação", () => {
+    const lines = summarizeLines(
+      [
+        route("a", "100", "feeder"),
+        route("b", "EST", "estimated"),
+        route("c", "353", "nearWork"),
+        route("d", "620", "intercity"),
+        route("e", "332", "nearWork"),
+      ],
+      [],
+    );
+    expect(lines.map((l) => l.ref)).toEqual(["332", "353", "620", "EST", "100"]);
+    expect(lineRoleLabel(lines[0]!)).toBe("passa perto do trabalho");
+    expect(lineRoleLabel(lines[2]!)).toBe("intermunicipal");
+  });
+
+  it("o papel mais forte entre os sentidos vence", () => {
+    const [l] = summarizeLines([route("x1", "353", "feeder"), route("x2", "353", "nearWork")], []);
+    expect(l!.kind).toBe("nearWork");
   });
 });

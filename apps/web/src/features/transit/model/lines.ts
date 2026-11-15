@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { BBox, BusLine, CityRef } from "@homematch/contracts";
+import type { BBox, BusLine, CityRef, LatLng } from "@homematch/contracts";
 import { api } from "@/shared/api/client";
 import { readSaved, writeSaved } from "@/shared/lib/persist";
 
@@ -12,11 +12,11 @@ interface LinesState {
   unrestored: string[];
   restoring: boolean;
   /** Busca de novo as linhas salvas (guarda só o id; o servidor tem cache). */
-  restore: (city: CityRef | null) => Promise<void>;
+  restore: (city: CityRef | null, work?: LatLng | null) => Promise<void>;
   /** Mudança vinda da tela (adicionar, remover, limpar): remover também esquece as que não voltaram. */
   setLines: (v: Update) => void;
   /** Põe uma linha no mapa pelo número; devolve a frase para mostrar. */
-  addLine: (q: string, city: CityRef | null, box: BBox | undefined) => Promise<string>;
+  addLine: (q: string, city: CityRef | null, box: BBox | undefined, work?: LatLng | null) => Promise<string>;
 }
 
 const savedIds = () => readSaved<string[]>("busLines", []);
@@ -26,7 +26,7 @@ export const useLines = create<LinesState>()((set, get) => ({
   unrestored: [],
   restoring: false,
 
-  async restore(city) {
+  async restore(city, work) {
     const ids = savedIds();
     if (!ids.length) return;
     set({ restoring: true });
@@ -34,7 +34,7 @@ export const useLines = create<LinesState>()((set, get) => ({
     await Promise.allSettled(
       ids.map((id) => {
         const q = id.includes(":") ? id : `https://www.openstreetmap.org/relation/${id}`;
-        return api.bus(q, undefined, city).then(
+        return api.bus(q, undefined, city, work).then(
           (found) => {
             if (!found.length) failed.push(id);
             set((s) => ({ lines: [...s.lines.filter((x) => x.id !== id), ...found] }));
@@ -55,9 +55,9 @@ export const useLines = create<LinesState>()((set, get) => ({
     });
   },
 
-  async addLine(q, city, box) {
+  async addLine(q, city, box, work) {
     try {
-      const found = await api.bus(q, box, city);
+      const found = await api.bus(q, box, city, work);
       if (!found.length) return `Não achei a linha "${q}"${city ? ` em ${city.name}` : ""}.`;
       get().setLines((prev) => [...prev.filter((l) => !found.some((f) => f.id === l.id)), ...found]);
       const stops = found.reduce((n, l) => n + l.stops.length, 0);

@@ -30,8 +30,10 @@ export const osmArea = (city: BBox, marginM: number) => padBBox(city, Math.ceil(
 export interface CommuteNetwork {
   routes: ParsedRoute[];
   stops: BoardingStop[];
-  /** Linhas que vão sempre ao mapa (as que param perto do trabalho e as intermunicipais encontradas). */
-  keepIds: Set<string>;
+  /** Linhas que param perto do trabalho (vão sempre ao mapa, primeiro na lista). */
+  nearWorkIds: Set<string>;
+  /** Linhas intermunicipais que saem da cidade de casa (vão sempre ao mapa, depois das de perto do trabalho). */
+  intercityIds: Set<string>;
   fallback?: GridInput["fallback"];
   hubs?: Hub[];
   /** Trechos estimados (cidade → terminal) dos terminais que a grade usou, para desenhar no mapa. */
@@ -43,6 +45,21 @@ type Warn = (m: string) => void;
 const noLegs = () => [];
 const count = (routes: ParsedRoute[], ids: Set<string>) =>
   new Set(routes.filter((r) => ids.has(r.id)).map((r) => r.ref ?? r.id)).size;
+
+/** Linhas que param perto do trabalho, da mais rápida para a mais lenta, e os números delas para a mensagem. */
+function nearWork(routes: ParsedRoute[], work: LatLng) {
+  const direct = boardingStops(routes, work, DEFAULT_TRANSIT);
+  const ids = new Set(direct.map((s) => s.routeId));
+  const byId = new Map(routes.map((r) => [r.id, r]));
+  const best = new Map<string, number>();
+  for (const s of direct) {
+    const key = byId.get(s.routeId)?.ref ?? s.routeId;
+    best.set(key, Math.min(best.get(key) ?? Infinity, s.valueMin));
+  }
+  const refs = [...best.entries()].sort((a, b) => a[1] - b[1]).map(([k]) => k);
+  const list = refs.length ? `: ${refs.slice(0, 8).join(", ")}${refs.length > 8 ? "…" : ""}` : "";
+  return { direct, ids, count: refs.length, list };
+}
 
 /** Rede do operador oficial da cidade (vazia se não houver ou se falhar). */
 async function officialRoutes(city: City, emit: Emit, warn: Warn): Promise<{ routes: ParsedRoute[]; name?: string }> {
@@ -75,15 +92,15 @@ export async function localNetwork(
   }
   // Com a rede inteira do operador dá para considerar uma baldeação; com o OSM só há as linhas perto do trabalho.
   const transfers = official;
-  const direct = boardingStops(routes, req.work, DEFAULT_TRANSIT);
-  const stops = transfers ? boardingStops(routes, req.work, DEFAULT_TRANSIT, { transfers: true }) : direct;
-  const directIds = new Set(direct.map((s) => s.routeId));
-  const nearCount = count(routes, directIds);
+  const near = nearWork(routes, req.work);
+  const directIds = near.ids;
+  const stops = transfers ? boardingStops(routes, req.work, DEFAULT_TRANSIT, { transfers: true }) : near.direct;
+  const nearCount = near.count;
   const viaCount = count(routes, new Set(stops.map((s) => s.routeId)));
   emit({
     type: "progress",
     message:
-      `${nearCount} linhas passam perto do trabalho${official ? ` (fonte: ${op.name})` : ""}` +
+      `${nearCount} linhas passam perto do trabalho${official ? ` (fonte: ${op.name})` : ""}${near.list}` +
       (transfers ? `; com uma baldeação, ${viaCount} linhas levam até lá` : "") +
       ` — ${stops.length} pontos de embarque.`,
   });
@@ -114,7 +131,7 @@ export async function localNetwork(
       warn("Nenhuma linha nem ponto de ônibus no OpenStreetMap perto do trabalho; só a caminhada foi considerada.");
     }
   }
-  return { routes, stops, keepIds: directIds, fallback, legs: noLegs };
+  return { routes, stops, nearWorkIds: directIds, intercityIds: new Set(), fallback, legs: noLegs };
 }
 
 const ESTIMATED_COLOR = "#495057";
@@ -129,25 +146,34 @@ export async function intercityNetwork(req: AnalyzeRequest, emit: Emit, warn: Wa
   const workCity = await cityAt(req.work).catch(() => null);
   if (!workCity || workCity.osmId === home.osmId) return localNetwork(req, emit, warn, !!workCity);
 
-  emit({
-    type: "progress",
-    message: `O trabalho fica em ${workCity.name}: procurando linhas intermunicipais de ${home.name} para lá…`,
-  });
   const homeOp = operatorFor(home);
   const workOp = operatorFor(workCity);
-  const [inter, arrival, homeRoutes] = await Promise.all([
-    fetchIntercity(home, workCity).catch((e: Error) => e),
-    // Rede da cidade do trabalho: oficial quando há operador cadastrado; senão, as linhas do OSM perto do trabalho.
-    workOp
-      ? officialRoutes(workCity, emit, warn).then((r) => r.routes)
-      : fetchRoutesNearWork(req.work, DEFAULT_TRANSIT).catch(() => []),
-    // Rede da cidade de casa, se for de outro operador e chegar ao trabalho (cidades coladas).
+  // As três buscas saem juntas (o Overpass é o mais lento), mas a tela recebe primeiro as linhas do trabalho.
+  const interP = fetchIntercity(home, workCity).catch((e: Error) => e);
+  const homeP: Promise<ParsedRoute[]> =
     homeOp && homeOp !== workOp
-      ? officialRoutes(home, emit, warn).then((r) =>
+      ? // Rede da cidade de casa, se for de outro operador e chegar ao trabalho (cidades coladas).
+        officialRoutes(home, emit, warn).then((r) =>
           boardingStops(r.routes, req.work, DEFAULT_TRANSIT).length ? r.routes : [],
         )
-      : [],
-  ]);
+      : Promise.resolve([]);
+  emit({
+    type: "progress",
+    message: `O trabalho fica em ${workCity.name}: primeiro, as linhas que passam perto dele…`,
+  });
+  // 1) Rede da cidade do trabalho: oficial quando há operador cadastrado; senão, as linhas do OSM perto do trabalho.
+  const arrival = workOp
+    ? (await officialRoutes(workCity, emit, warn)).routes
+    : await fetchRoutesNearWork(req.work, DEFAULT_TRANSIT).catch(() => []);
+  const near = nearWork(arrival, req.work);
+  emit({
+    type: "progress",
+    message:
+      `${near.count} linhas passam perto do trabalho em ${workCity.name}${workOp ? ` (${workOp.info.name})` : ""}` +
+      `${near.list}. Agora, as linhas intermunicipais de ${home.name} para lá…`,
+  });
+  // 2) Linhas intermunicipais entre as duas cidades.
+  const [inter, homeRoutes] = await Promise.all([interP, homeP]);
 
   // Overpass fora do ar: segue com o cálculo de antes (linhas perto do trabalho e ônibus estimado direto).
   if (inter instanceof Error) {
@@ -156,7 +182,7 @@ export async function intercityNetwork(req: AnalyzeRequest, emit: Emit, warn: Wa
   }
 
   // A mesma linha pode vir do OSM como intermunicipal e como linha perto do trabalho: fica uma vez só.
-  const routes = [...new Map([...homeRoutes, ...inter.routes, ...arrival].map((r) => [r.id, r])).values()];
+  const routes = [...new Map([...arrival, ...homeRoutes, ...inter.routes].map((r) => [r.id, r])).values()];
   const stops = boardingStops(routes, req.work, DEFAULT_TRANSIT, { transfers: true });
   const atHome = (p: LatLng) => (home.boundary?.length ? inMultiPolygon(p, home.boundary) : inBBox(p, home.bbox));
   const homeIds = new Set(stops.filter(atHome).map((s) => s.routeId));
@@ -222,13 +248,16 @@ export async function intercityNetwork(req: AnalyzeRequest, emit: Emit, warn: Wa
           [h.lat, h.lng],
         ],
         estimated: true,
+        kind: "estimated" as const,
       }));
 
   return {
     routes,
     stops,
-    // Das linhas da cidade do trabalho, vão ao mapa só as que as regiões usam (as do centro passam de cem).
-    keepIds: interHomeIds,
+    // Ao mapa vão as que passam perto do trabalho e as intermunicipais; da rede da cidade do trabalho, só as que as
+    // regiões usam (a rede inteira passa de cem linhas).
+    nearWorkIds: new Set([...near.ids, ...nearWork(homeRoutes, req.work).ids]),
+    intercityIds: interHomeIds,
     fallback,
     hubs,
     legs,

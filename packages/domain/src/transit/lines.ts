@@ -1,4 +1,4 @@
-import type { BusLine, LatLng, TransitMode, TransitRoute } from "@homematch/contracts";
+import type { BusLine, LatLng, RouteKind, TransitMode, TransitRoute } from "@homematch/contracts";
 import { distance } from "../geo.js";
 
 /** Uma linha de ônibus como a pessoa pensa nela: o número, com os dois sentidos juntos. */
@@ -14,6 +14,8 @@ export interface LineSummary {
   directions: { id: string; from?: string; to?: string; stops: number }[];
   /** work = a análise usa para chegar ao trabalho; mine = você adicionou. */
   roles: ("work" | "mine")[];
+  /** Papel na análise (o mais forte entre os sentidos): passa perto do trabalho, intermunicipal… */
+  kind?: RouteKind;
   /** Id para pedir a grade de horários ("emdec:353"), quando o operador publica. */
   timetableId?: string;
 }
@@ -62,10 +64,29 @@ export function summarizeLines(routes: TransitRoute[], mine: BusLine[]): LineSum
     const s = get(r);
     if (!s.roles.includes("work")) s.roles.push("work");
     if (!s.directions.some((d) => d.id === r.id)) s.directions.push({ id: r.id, stops: r.path.length });
+    if (r.kind && kindRank(r.kind) < kindRank(s.kind)) s.kind = r.kind;
   }
-  return [...byKey.values()].sort((a, b) =>
-    (a.ref ?? a.name).localeCompare(b.ref ?? b.name, "pt-BR", { numeric: true }),
+  // Primeiro as que passam perto do trabalho, depois as intermunicipais, os trechos estimados, as de baldeação e
+  // as que você adicionou; dentro de cada grupo, pelo número.
+  return [...byKey.values()].sort(
+    (a, b) =>
+      kindRank(a.kind) - kindRank(b.kind) ||
+      (a.ref ?? a.name).localeCompare(b.ref ?? b.name, "pt-BR", { numeric: true }),
   );
+}
+
+const KIND_ORDER: RouteKind[] = ["nearWork", "intercity", "estimated", "feeder"];
+const kindRank = (k: RouteKind | undefined) => (k ? KIND_ORDER.indexOf(k) : KIND_ORDER.length);
+
+/** Texto curto do papel da linha ("passa perto do trabalho", "intermunicipal"…). */
+export function lineRoleLabel(l: Pick<LineSummary, "kind" | "roles">): string {
+  const parts: string[] = [];
+  if (l.kind === "nearWork") parts.push("passa perto do trabalho");
+  else if (l.kind === "intercity") parts.push("intermunicipal");
+  else if (l.kind === "estimated") parts.push("trecho estimado");
+  else if (l.roles.includes("work")) parts.push("leva ao trabalho");
+  if (l.roles.includes("mine")) parts.push("você adicionou");
+  return parts.join(" · ");
 }
 
 /** Parada mais próxima de uma linha (até 3 km). */

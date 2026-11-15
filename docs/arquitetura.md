@@ -89,18 +89,27 @@ No app, o nível mínimo ("Todas", "Boa ou melhor", "Só excelentes") vale para 
 Quando o trabalho fica fora do município escolhido (`services/commute.ts`):
 
 1. A cidade do trabalho sai do Nominatim (`cityAt`, com o limite municipal).
-2. Uma consulta ao Overpass (`sources/intercity.ts`) traz as **linhas intermunicipais**: as relações de ônibus, trem
+2. **Primeiro, as linhas que passam perto do trabalho** (rede da cidade do trabalho: o operador oficial, como a EMDEC,
+   ou o OSM). Elas vão sempre ao mapa e aparecem no topo da lista de linhas ("passa perto do trabalho").
+3. Uma consulta ao Overpass (`sources/intercity.ts`) traz as **linhas intermunicipais**: as relações de ônibus, trem
    ou metrô que param nas duas cidades (conferido pelo limite, porque as bboxes de cidades vizinhas se sobrepõem),
-   os pontos de ônibus da cidade de casa e os terminais/rodoviárias da cidade do trabalho.
-3. A rede da cidade do trabalho entra para a baldeação no destino: o operador oficial quando há (EMDEC em Campinas),
+   os pontos de ônibus da cidade de casa e os terminais/rodoviárias da cidade do trabalho. Para ser leve, ela pega
+   as linhas que param na cidade de casa e filtra pela bbox da cidade do trabalho (`rel.ra(bbox)`); quem para mesmo
+   lá é conferido no parse, pelo limite municipal.
+4. A rede da cidade do trabalho entra para a baldeação no destino: o operador oficial quando há (EMDEC em Campinas),
    senão as linhas do OSM perto do trabalho. O cálculo é o de sempre (`boardingStops` com uma baldeação).
-4. Com poucas intermunicipais mapeadas saindo da cidade de casa, entra a estimativa por terminal (`domain/transit/
+5. Com poucas intermunicipais mapeadas saindo da cidade de casa, entra a estimativa por terminal (`domain/transit/
    intercity.ts`): ponto perto de casa → terminal da cidade do trabalho por rodovia → linha municipal (ou a pé) até o
    trabalho, escolhendo o terminal com o menor tempo. No mapa, esse trecho aparece pontilhado
    (`TransitRoute.estimated`), junto com a linha municipal real.
 
 Linhas metropolitanas sem dado aberto (a EMTU/Artesp fica atrás de bloqueio anti-robô e não publica GTFS aberto)
 dependem do OpenStreetMap; onde ninguém mapeou, vale a estimativa.
+
+As buscas de linha do app (`/api/bus`, `/api/bus/near`, `/api/transit/operator`) recebem também o trabalho
+(`wlat`, `wlng`): morando em Paulínia e trabalhando em Campinas, a linha 353 e as "linhas perto do trabalho" vêm da
+EMDEC. Cada linha da análise tem um papel (`TransitRoute.kind`): `nearWork`, `intercity`, `estimated` ou `feeder`
+(baldeação), e a lista do mapa segue essa ordem.
 
 | Método | Rota | O que faz |
 |---|---|---|

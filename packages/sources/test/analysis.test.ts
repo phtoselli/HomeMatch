@@ -133,3 +133,18 @@ describe("consultas de características", () => {
     expect(pois.map((p) => p.name)).toEqual(["Parque Taquaral"]);
   });
 });
+
+describe("caminhada longa não é transporte", () => {
+  it("sem ônibus e longe do trabalho, o transporte não conta como atingido", () => {
+    const out = scoreGrid({
+      ...base,
+      stops: [],
+      features: [{ id: "parque", radius: 5000, weight: 1 }],
+      pois: { parque: [{ id: "p1", feature: "parque", lat: -23.57, lng: -46.65 }] },
+    });
+    for (const c of out.cells) {
+      if (c.via === "a pé" && c.commuteMin > 60) expect(c.hits).not.toContain("transporte");
+    }
+    expect(out.cells.some((c) => c.via === "a pé" && c.commuteMin > 60)).toBe(true);
+  });
+});

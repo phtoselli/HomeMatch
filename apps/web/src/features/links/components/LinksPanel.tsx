@@ -74,7 +74,7 @@ export function LinksPanel(p: Props) {
     );
     try {
       const box = p.city?.bbox ?? p.viewBBox ?? undefined;
-      const found = await api.bus(q, box, p.city);
+      const found = await api.bus(q, box, p.city, p.work);
       if (!found.length) {
         setError(
           `Não achei a linha "${q}" ${p.city ? `em ${p.city.name}` : "nesta área do mapa"}. Tente o número com a variante (ex.: 875A-10) ou o link da linha no OpenStreetMap.`,

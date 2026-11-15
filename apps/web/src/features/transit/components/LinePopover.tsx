@@ -1,4 +1,4 @@
-import { dayLabelFor, nextDepartures, type LineSummary } from "@homematch/domain";
+import { dayLabelFor, nextDepartures, type LineSummary, lineRoleLabel } from "@homematch/domain";
 import { useTimetable } from "@/shared/api/queries";
 import { CloseButton, ExternalLink, Icon, Spinner } from "@/shared/ui";
 
@@ -85,9 +85,7 @@ export function LinePopover(p: Props) {
       ) : null}
       <p className="line-pop-meta">
         {stops > 0 && <>{stops} pontos por sentido · </>}
-        {l.roles.includes("work") ? "leva ao trabalho" : ""}
-        {l.roles.length > 1 ? " · " : ""}
-        {l.roles.includes("mine") ? "você adicionou" : ""}
+        {lineRoleLabel(l)}
       </p>
       <div className="line-pop-actions">
         {l.timetableId ? (

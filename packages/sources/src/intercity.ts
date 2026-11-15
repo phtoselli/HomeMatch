@@ -40,9 +40,9 @@ export function buildIntercityQuery(home: BBox, work: BBox): string {
   return (
     `[out:json][timeout:180];` +
     `(${stopsIn(home)})->.sa;rel(bn.sa)["type"="route"]["route"~"${ROUTE_RE}"]->.ra;` +
-    `(${stopsIn(work)})->.sb;rel(bn.sb)["type"="route"]["route"~"${ROUTE_RE}"]->.rb;` +
-    // Interseção: as linhas que param nas duas áreas.
-    `rel.ra.rb->.r;.r out geom;` +
+    // Das que param na cidade de casa, as que também passam pela cidade do trabalho (filtro de bbox na relação:
+    // bem mais leve que achar todos os pontos de uma cidade grande). Quem para mesmo lá é conferido no parse.
+    `rel.ra(${w})->.r;.r out geom;` +
     `.sa out skel qt;` +
     `(nwr["amenity"="bus_station"](${w});nwr["public_transport"="station"]["bus"="yes"](${w}););out center tags qt;`
   );

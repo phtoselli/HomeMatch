@@ -103,8 +103,15 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
     // trechos intermunicipais estimados até os terminais que as regiões usam.
     routes: [
       ...routes
-        .filter((r) => net.keepIds.has(r.id) || cellRouteIds.has(r.id))
-        .map(({ ptv2: _p, alightOnly: _a, ...r }) => r),
+        .filter((r) => net.nearWorkIds.has(r.id) || net.intercityIds.has(r.id) || cellRouteIds.has(r.id))
+        .map(({ ptv2: _p, alightOnly: _a, ...r }) => ({
+          ...r,
+          kind: net.nearWorkIds.has(r.id)
+            ? ("nearWork" as const)
+            : net.intercityIds.has(r.id)
+              ? ("intercity" as const)
+              : ("feeder" as const),
+        })),
       ...net.legs(grid.hubsUsed),
     ],
     pois: trimmed,

@@ -20,7 +20,7 @@ export function App() {
   const search = useSearch();
   const { filters, setFilters } = search;
   const features = useFeatures();
-  const operator = useOperator(city).data ?? null;
+  const operator = useOperator(city, work).data ?? null;
   const { settings: mapSettings, setSettings: setMapSettings, hideLine } = useMapSettings();
   const fav = useFavorites();
   const { results: linkResults, setResults: setLinkResults } = useLinks();
@@ -34,7 +34,7 @@ export function App() {
   // Ao abrir: enquadra a cidade salva e traz de volta as linhas que a pessoa tinha posto no mapa.
   useEffect(() => {
     if (city) view.fitTo(city.bbox);
-    void restore(city);
+    void restore(city, work);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selected = find(view.selectedId);
@@ -281,7 +281,7 @@ export function App() {
               search={search}
               filters={filters}
               setFilters={setFilters}
-              onAddLine={(q) => addLine(q, city, city?.bbox ?? view.viewBBox ?? undefined)}
+              onAddLine={(q) => addLine(q, city, city?.bbox ?? view.viewBBox ?? undefined, work)}
               onFinish={() => runAll()}
               onClose={city && work ? shell.closeSetup : undefined}
             />

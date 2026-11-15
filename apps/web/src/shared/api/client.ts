@@ -18,8 +18,11 @@ import type {
   TransitOperatorInfo,
 } from "@homematch/contracts";
 
-const cityParams = (c?: CityRef | null): Record<string, string> =>
-  c ? { cityId: c.osmId, cityName: c.name, ...(c.stateCode ? { uf: c.stateCode } : {}) } : {};
+const cityParams = (c?: CityRef | null, work?: LatLng | null): Record<string, string> => ({
+  ...(c ? { cityId: c.osmId, cityName: c.name, ...(c.stateCode ? { uf: c.stateCode } : {}) } : {}),
+  // O trabalho pode ser em outra cidade: o operador de lá (ex.: EMDEC) também entra na busca de linhas.
+  ...(work ? { wlat: work.lat.toFixed(5), wlng: work.lng.toFixed(5) } : {}),
+});
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -66,8 +69,8 @@ export const api = {
     streamPost<Listing[]>("/api/listings", req, on),
   links: (req: LinksRequest, on: (ev: StreamEvent<LinkResult[]>) => void) =>
     streamPost<LinkResult[]>("/api/links", req, on),
-  bus: (q: string, box?: BBox, city?: CityRef | null) => {
-    const p = new URLSearchParams({ q, ...cityParams(city) });
+  bus: (q: string, box?: BBox, city?: CityRef | null, work?: LatLng | null) => {
+    const p = new URLSearchParams({ q, ...cityParams(city, work) });
     if (box) for (const [k, v] of Object.entries(box)) p.set(k, String(v));
     return getJson<BusLine[]>(`/api/bus?${p}`);
   },
@@ -77,8 +80,8 @@ export const api = {
     getJson<BusLine[]>(
       `/api/bus/near?${new URLSearchParams({ lat: String(at.lat), lng: String(at.lng), radius: String(radius), ...cityParams(city) })}`,
     ),
-  operator: (city: CityRef) =>
-    getJson<TransitOperatorInfo | null>(`/api/transit/operator?${new URLSearchParams(cityParams(city))}`),
+  operator: (city: CityRef, work?: LatLng | null) =>
+    getJson<TransitOperatorInfo | null>(`/api/transit/operator?${new URLSearchParams(cityParams(city, work))}`),
 };
 
 /** POST que recebe NDJSON: chama `on` a cada evento e resolve com o resultado final. */

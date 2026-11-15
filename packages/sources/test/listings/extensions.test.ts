@@ -59,7 +59,7 @@ describe("schema.org genérico", () => {
     expect(casa.neighbourhood).toBe("Loteamento Alphaville Campinas");
     expect(casa.cityName).toBe("Campinas");
     expect(casa.geo).toEqual({ lat: -22.9292, lng: -47.15616 });
-    expect(casa.agency).toBe("JESUS CORREA DE SOUZA");
+    expect(casa.agency).toBe("ANUNCIANTE EXEMPLO UM");
   });
 
   it("Sites do Mercado: Product + offers + additionalProperty (os de venda e aluguel também valem)", () => {

@@ -17,7 +17,7 @@ const osasco = { bbox: { south: -23.58, north: -23.48, west: -46.83, east: -46.7
 describe("linhas intermunicipais (OpenStreetMap)", () => {
   it("a consulta pede a interseção das linhas que param nas duas cidades e os terminais do destino", () => {
     const q = buildIntercityQuery(barueri.bbox, osasco.bbox);
-    expect(q).toContain("rel.ra.rb->.r;.r out geom;");
+    expect(q).toMatch(/rel\.ra\([-0-9.,]+\)->\.r;\.r out geom;/);
     expect(q).toContain('nwr["amenity"="bus_station"]');
     expect(q).toContain(".sa out skel qt;");
   });

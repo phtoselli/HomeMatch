@@ -4,6 +4,14 @@ import { TRANSIT_MODES } from "./constants.js";
 
 export const transitModeSchema = z.enum(TRANSIT_MODES);
 
+/**
+ * Papel da linha na análise: passa perto do trabalho, liga as duas cidades (intermunicipal), trecho estimado
+ * (intermunicipal sem linha mapeada) ou só leva até uma dessas (baldeação).
+ */
+export const ROUTE_KINDS = ["nearWork", "intercity", "estimated", "feeder"] as const;
+export const routeKindSchema = z.enum(ROUTE_KINDS);
+export type RouteKind = z.infer<typeof routeKindSchema>;
+
 /** Linha que a análise usa para chegar ao trabalho. */
 export const transitRouteSchema = z.object({
   /** Id da relação OSM ou "<operador>:<linha>:<sentido>". */
@@ -19,6 +27,7 @@ export const transitRouteSchema = z.object({
   shape: z.array(z.array(latLngTupleSchema)).optional(),
   /** Trecho estimado (intermunicipal sem linha mapeada): só liga a cidade ao terminal; o mapa desenha pontilhado. */
   estimated: z.boolean().optional(),
+  kind: routeKindSchema.optional(),
 });
 export type TransitRoute = z.infer<typeof transitRouteSchema>;
 
