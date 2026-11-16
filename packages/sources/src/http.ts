@@ -25,7 +25,7 @@ function cachePath(ns: string, key: string): string {
   return join(CACHE_DIR, ns.replace(/[^\w.-]/g, "_"), `${h}.json`);
 }
 
-export async function cacheGet<T>(ns: string, key: string, ttlMs: number): Promise<T | undefined> {
+export async function cacheGet<T>(ns: string, key: string, ttlMs: number = Infinity): Promise<T | undefined> {
   try {
     const raw = JSON.parse(await readFile(cachePath(ns, key), "utf8")) as { savedAt: number; value: T };
     if (Date.now() - raw.savedAt <= ttlMs) return raw.value;
@@ -68,13 +68,13 @@ const SHARED_MIN_TTL = DAY;
 const SHARED_MAX_CHARS = 1_900_000;
 const sharedKey = (ns: string, key: string) => `${ns}/${createHash("sha1").update(key).digest("hex")}`;
 
-async function sharedGet<T>(ns: string, key: string, ttlMs: number): Promise<T | undefined> {
+async function sharedGet<T>(ns: string, key: string, ttlMs: number, maxAgeMs = ttlMs): Promise<T | undefined> {
   if (!shared || ttlMs < SHARED_MIN_TTL) return undefined;
   try {
     const raw = await shared.get(sharedKey(ns, key));
     if (typeof raw !== "string") return undefined;
     const item = JSON.parse(gunzipSync(Buffer.from(raw, "base64")).toString("utf8")) as { savedAt: number; value: T };
-    return Date.now() - item.savedAt <= ttlMs ? item.value : undefined;
+    return Date.now() - item.savedAt <= maxAgeMs ? item.value : undefined;
   } catch {
     return undefined; // cache remoto fora do ar ou cota esgotada: segue sem ele
   }
@@ -84,14 +84,21 @@ async function sharedSet<T>(ns: string, key: string, ttlMs: number, value: T): P
   if (!shared || ttlMs < SHARED_MIN_TTL) return;
   try {
     const raw = gzipSync(JSON.stringify({ savedAt: Date.now(), value })).toString("base64");
+    // Guarda por mais tempo que a validade: se a fonte cair, o valor antigo ainda serve (ver `cached`).
     if (raw.length <= SHARED_MAX_CHARS)
-      await shared.set(sharedKey(ns, key), raw, { ttl: Math.round(ttlMs / 1000), name: ns });
+      await shared.set(sharedKey(ns, key), raw, { ttl: Math.round((ttlMs * STALE_FACTOR) / 1000), name: ns });
   } catch {
     /* sem cache remoto: o local já foi gravado */
   }
 }
 
-/** Cache em dois níveis: disco local e, se ligado, o compartilhado. */
+/** Quanto tempo além da validade o valor antigo fica guardado para o caso de a fonte cair. */
+const STALE_FACTOR = 4;
+
+/**
+ * Cache em dois níveis: disco local e, se ligado, o compartilhado. Se a fonte falhar (Overpass lotado, site fora do
+ * ar), devolve o valor vencido que houver em vez de derrubar a busca: dado de mapa de alguns dias atrás serve.
+ */
 export async function cached<T>(ns: string, key: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
   const hit = await cacheGet<T>(ns, key, ttlMs);
   if (hit !== undefined) return hit;
@@ -100,7 +107,14 @@ export async function cached<T>(ns: string, key: string, ttlMs: number, fn: () =
     await cacheSet(ns, key, remote);
     return remote;
   }
-  const value = await fn();
+  let value: T;
+  try {
+    value = await fn();
+  } catch (e) {
+    const stale = (await cacheGet<T>(ns, key)) ?? (await sharedGet<T>(ns, key, ttlMs, ttlMs * STALE_FACTOR));
+    if (stale !== undefined) return stale;
+    throw e;
+  }
   await cacheSet(ns, key, value);
   await sharedSet(ns, key, ttlMs, value);
   return value;

@@ -88,7 +88,10 @@ export async function localNetwork(
   // Com a rede oficial em mãos, não espera o Overpass (lento e muitas vezes lotado).
   if (!official) {
     emit({ type: "progress", message: "Buscando linhas de ônibus, metrô e trem que passam perto do trabalho…" });
-    routes = await fetchRoutesNearWork(req.work, DEFAULT_TRANSIT);
+    routes = await fetchRoutesNearWork(req.work, DEFAULT_TRANSIT).catch(() => {
+      warn("O OpenStreetMap está lotado e não deu para buscar as linhas perto do trabalho agora.");
+      return [];
+    });
   }
   // Com a rede inteira do operador dá para considerar uma baldeação; com o OSM só há as linhas perto do trabalho.
   const transfers = official;

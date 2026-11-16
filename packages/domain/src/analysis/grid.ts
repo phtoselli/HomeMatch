@@ -17,6 +17,8 @@ export interface GridInput {
   bbox: BBox;
   boundary?: Polygon[];
   work: LatLng;
+  /** Nome da cidade: dá nome às áreas longe de qualquer bairro mapeado ("Paulínia, zona norte"). */
+  cityName?: string;
   cellSizeM: number;
   maxWalkToStopM: number;
   /** Importância do transporte até o trabalho (0 = não conta). */
@@ -134,11 +136,7 @@ export function scoreGrid(input: GridInput): GridOutput {
     levels[level]++;
     if (commute.hubId) hubsUsed.add(commute.hubId);
 
-    // Nome do bairro: o place mais "importante" (suburb > quarter > neighbourhood) entre os mais próximos.
-    const nearPlaces = placeIdx.within(c, 2500).sort((a, b) => a.dist - b.dist);
-    const place = nearPlaces.length
-      ? nearPlaces.slice(0, 3).sort((a, b) => a.dist + a.item.rank * 400 - (b.dist + b.item.rank * 400))[0]!.item.name
-      : `Região ${c.lat.toFixed(3)}, ${c.lng.toFixed(3)}`;
+    const place = placeName(c, placeIdx, input.bbox, input.cityName);
 
     cells.push({
       id: `${c.lat.toFixed(5)},${c.lng.toFixed(5)}`,
@@ -162,6 +160,46 @@ export function scoreGrid(input: GridInput): GridOutput {
     commuteRefMin: ref,
     hubsUsed: [...hubsUsed],
   };
+}
+
+/** Até onde um bairro dá nome às áreas em volta (perto) e, sem nenhum perto, o mais próximo que houver. */
+export const PLACE_REACH = { nearM: 2500, farM: 6000 };
+
+/**
+ * Nome de uma área: o bairro mais "importante" (oficial > suburb > quarter > neighbourhood > loteamento) entre os
+ * mais próximos; sem bairro perto, o mais próximo até 6 km; sem nenhum, a cidade e a zona ("Paulínia, zona norte").
+ * Nunca coordenadas: o nome aparece na tela e é usado para buscar imóveis nos portais.
+ */
+export function placeName(
+  c: LatLng,
+  places: PointIndex<{ lat: number; lng: number; name: string; rank: number }>,
+  bbox: BBox,
+  cityName = "Região",
+): string {
+  const near = places.within(c, PLACE_REACH.nearM).sort((a, b) => a.dist - b.dist);
+  if (near.length)
+    return near.slice(0, 3).sort((a, b) => a.dist + a.item.rank * 400 - (b.dist + b.item.rank * 400))[0]!.item.name;
+  const far = places.nearest(c, PLACE_REACH.farM);
+  if (far) return far.item.name;
+  return `${cityName}, ${zoneOf(c, bbox)}`;
+}
+
+/** Zona da cidade pela posição em relação ao centro da bbox (centro, norte, sudeste…). */
+export function zoneOf(c: LatLng, bbox: BBox): string {
+  const center = { lat: (bbox.south + bbox.north) / 2, lng: (bbox.west + bbox.east) / 2 };
+  const dy = (c.lat - center.lat) * 111_320;
+  const dx = (c.lng - center.lng) * 111_320 * Math.cos((center.lat * Math.PI) / 180);
+  if (Math.hypot(dx, dy) < 2000) return "centro";
+  const ns = dy > Math.abs(dx) / 2 ? "norte" : dy < -Math.abs(dx) / 2 ? "sul" : "";
+  const ew = dx > Math.abs(dy) / 2 ? "leste" : dx < -Math.abs(dy) / 2 ? "oeste" : "";
+  const DIAG: Record<string, string> = {
+    "norte-leste": "nordeste",
+    "norte-oeste": "noroeste",
+    "sul-leste": "sudeste",
+    "sul-oeste": "sudoeste",
+  };
+  const dir = ns && ew ? DIAG[`${ns}-${ew}`]! : ns || ew;
+  return `zona ${dir}`;
 }
 
 /** Agrupa as células por bairro e ordena: primeiro o nível (o melhor da região), depois a nota. */

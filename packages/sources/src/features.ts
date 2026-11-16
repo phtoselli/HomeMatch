@@ -1,4 +1,5 @@
 import type { BBox, FeatureDef, Poi } from "@homematch/contracts";
+import { DAY } from "./http.js";
 import { bboxQL, elementPoint, overpass, type OsmElement } from "./osm/overpass.js";
 
 /**
@@ -175,12 +176,60 @@ export async function fetchFeaturePois(id: string, bbox: BBox): Promise<Poi[]> {
   return parseFeaturePois(id, res.elements);
 }
 
-/** Bairros (place=suburb/neighbourhood/quarter) para dar nome às regiões. */
-export async function fetchPlaceNames(bbox: BBox): Promise<{ lat: number; lng: number; name: string; rank: number }[]> {
-  const q = `[out:json][timeout:120];(node["place"~"^(suburb|quarter|neighbourhood)$"]["name"](${bboxQL(bbox)}););out qt;`;
-  const res = await overpass(q, 30 * 24 * 3_600_000);
-  const rank: Record<string, number> = { suburb: 0, quarter: 1, neighbourhood: 2 };
-  return res.elements
-    .filter((e) => e.lat != null && e.tags?.name)
-    .map((e) => ({ lat: e.lat!, lng: e.lon!, name: e.tags!.name!, rank: rank[e.tags!.place!] ?? 3 }));
+export interface PlaceName {
+  lat: number;
+  lng: number;
+  name: string;
+  /** Menor = mais "bairro": bairro oficial e suburb antes de loteamento e condomínio. */
+  rank: number;
+}
+
+const PLACE_RANK: Record<string, number> = { suburb: 0, quarter: 1, neighbourhood: 2, hamlet: 3, village: 3 };
+
+/**
+ * Bairros para dar nome às regiões. Duas consultas: os pontos de bairro (place=suburb/quarter/neighbourhood) e as
+ * áreas com nome (bairro oficial como limite administrativo, loteamento/residencial, vila, povoado), que cobrem as
+ * cidades onde quase não há pontos de bairro mapeados. Se a segunda falhar, vale só a primeira.
+ */
+export async function fetchPlaceNames(bbox: BBox): Promise<PlaceName[]> {
+  const [points, areas] = await Promise.all([
+    overpass(buildPlacePointsQuery(bbox), 30 * DAY),
+    overpass(buildPlaceAreasQuery(bbox), 30 * DAY).catch(() => ({ elements: [] as OsmElement[] })),
+  ]);
+  return parsePlaceNames([...points.elements, ...areas.elements]);
+}
+
+export const buildPlacePointsQuery = (bbox: BBox) =>
+  `[out:json][timeout:120];(node["place"~"^(suburb|quarter|neighbourhood)$"]["name"](${bboxQL(bbox)}););out qt;`;
+
+export const buildPlaceAreasQuery = (bbox: BBox) => {
+  const b = bboxQL(bbox);
+  return (
+    `[out:json][timeout:120];(` +
+    `node["place"~"^(hamlet|village)$"]["name"](${b});` +
+    `way["landuse"="residential"]["name"](${b});` +
+    `way["place"~"^(suburb|quarter|neighbourhood)$"]["name"](${b});` +
+    `rel["boundary"="administrative"]["admin_level"~"^(9|10)$"]["name"](${b});` +
+    `);out center tags qt;`
+  );
+};
+
+/** Parse puro: ponto ou centro de cada lugar com nome e o "peso" de bairro. */
+export function parsePlaceNames(elements: OsmElement[]): PlaceName[] {
+  const out: PlaceName[] = [];
+  for (const e of elements) {
+    const t = e.tags ?? {};
+    const p = elementPoint(e);
+    if (!p || !t.name) continue;
+    const rank =
+      t.boundary === "administrative"
+        ? 0 // bairro oficial da prefeitura
+        : t.place
+          ? (PLACE_RANK[t.place] ?? 3)
+          : t.landuse === "residential"
+            ? 2.5 // loteamento, condomínio, conjunto habitacional
+            : 3;
+    out.push({ ...p, name: t.name, rank });
+  }
+  return out;
 }

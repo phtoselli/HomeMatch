@@ -190,6 +190,16 @@ Toda chamada externa passa por `packages/sources/src/http.ts`:
    endereços, rede de ônibus), compactado, até 2 MB por item. É cache, não banco: se falhar ou a cota acabar,
    o app segue mais devagar. Anúncios ficam só no disco local.
 
+**Fonte fora do ar:** se a consulta falha (Overpass lotado, site fora do ar), o cache devolve o valor vencido que
+tiver (o compartilhado guarda 4× a validade) em vez de derrubar a busca. O Overpass tenta 5 servidores (incluindo as
+duas máquinas do overpass-api.de, `lz4` e `z`, com filas próprias) e, se todos estiverem lotados, dá mais uma volta
+depois de alguns segundos. Na análise, cada parte que ainda assim falhar (um tipo de lugar, as linhas perto do
+trabalho, os nomes dos bairros) vira aviso e o resto segue.
+
+**Nomes das regiões:** pontos de bairro do OSM e, numa segunda consulta, áreas com nome (bairro oficial como limite
+administrativo, loteamento/residencial, vila). Sem bairro a 2,5 km, vale o mais próximo até 6 km; sem nenhum, a
+cidade e a zona ("Paulínia, zona norte"). Nunca coordenadas: o nome também é usado na busca dos portais.
+
 As consultas ao OpenStreetMap pedem a cidade inteira (não o recorte em volta do trabalho): a mesma resposta serve a
 qualquer busca na cidade e o cache acerta quase sempre.
 

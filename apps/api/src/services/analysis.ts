@@ -24,15 +24,20 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
     ? inMultiPolygon(req.work, req.city.boundary)
     : inBBox(req.work, req.city.bbox);
   // Lugares e bairros saem junto com as linhas (o Overpass é lento: melhor esperar uma vez só).
+  // Cada consulta que falha (Overpass lotado) vira aviso e a análise segue com o resto, em vez de dar erro.
+  const failedPois: string[] = [];
   const poisPromise = Promise.all(
     req.features.map(async (f) => {
       // Margem de 2× o raio: o lugar logo além da divisa também conta (e a consulta é a mesma de antes, no cache).
-      return [f.id, await fetchFeaturePois(f.id, osmArea(req.city.bbox, f.radius * 2))] as const;
+      const list = await fetchFeaturePois(f.id, osmArea(req.city.bbox, f.radius * 2)).catch(() => {
+        failedPois.push(f.id);
+        return [] as Poi[];
+      });
+      return [f.id, list] as const;
     }),
   );
   const placesPromise = fetchPlaceNames(osmArea(req.city.bbox, 2000));
   // Evita "unhandled rejection" enquanto as linhas ainda estão sendo lidas; o erro é tratado lá embaixo.
-  poisPromise.catch(() => {});
   placesPromise.catch(() => {});
 
   const net = workInCity ? await localNetwork(req, emit, warn, true) : await intercityNetwork(req, emit, warn);
@@ -44,11 +49,16 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
   }
   const pois: Record<string, Poi[]> = Object.fromEntries(await poisPromise);
   for (const f of req.features) {
-    if (!pois[f.id]!.length)
-      warn(`Nenhum(a) ${featureById(f.id)?.label ?? f.id} encontrado(a) no OpenStreetMap nessa área.`);
+    const label = featureById(f.id)?.label ?? f.id;
+    if (failedPois.includes(f.id))
+      warn(
+        `O OpenStreetMap está lotado e não deu para mapear ${label.toLowerCase()} agora; ele ficou fora do nível das ` +
+          `regiões nesta busca. Tente de novo em alguns minutos.`,
+      );
+    else if (!pois[f.id]!.length) warn(`Nenhum(a) ${label} encontrado(a) no OpenStreetMap nessa área.`);
   }
-  const places = await placesPromise.catch((e) => {
-    warn(`Não deu para buscar os nomes dos bairros: ${(e as Error).message}`);
+  const places = await placesPromise.catch(() => {
+    warn("O OpenStreetMap está lotado e não deu para buscar os nomes dos bairros agora.");
     return [];
   });
 
@@ -57,6 +67,7 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
     bbox,
     boundary: req.city.boundary,
     work: req.work,
+    cityName: req.city.name,
     cellSizeM: req.cellSizeM,
     maxWalkToStopM: req.maxWalkToStopM,
     transitWeight: req.transitWeight,

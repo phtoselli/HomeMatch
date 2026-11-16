@@ -65,3 +65,18 @@ describe("cache em dois níveis", () => {
     expect(await http.cached("overpass", "q2", 7 * http.DAY, async () => "ok")).toBe("ok");
   });
 });
+
+describe("fonte fora do ar", () => {
+  it("devolve o valor vencido do cache em vez de derrubar a busca; sem nada guardado, o erro sobe", async () => {
+    process.env.DATA_DIR = mkdtempSync(join(tmpdir(), "homematch-cache-"));
+    vi.resetModules();
+    const http = await import("../src/http.js");
+    await http.cached("overpass", "stale-q", 1, async () => ({ v: "antigo" }));
+    await new Promise((r) => setTimeout(r, 5)); // passou da validade (1 ms)
+    const down = async () => {
+      throw new Error("Overpass indisponível");
+    };
+    expect(await http.cached("overpass", "stale-q", 1, down)).toEqual({ v: "antigo" });
+    await expect(http.cached("overpass", "nunca-visto", 1, down)).rejects.toThrow("Overpass indisponível");
+  });
+});

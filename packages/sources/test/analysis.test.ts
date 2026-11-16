@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { rankRegions, scoreGrid } from "@homematch/domain";
-import { buildFeatureQuery, parseFeaturePois } from "../src/features.js";
+import { PointIndex, placeName, rankRegions, scoreGrid } from "@homematch/domain";
+import { buildFeatureQuery, parseFeaturePois, parsePlaceNames } from "../src/features.js";
 import { padBBox } from "@homematch/domain";
 import type { BoardingStop } from "@homematch/domain";
 
@@ -146,5 +146,50 @@ describe("caminhada longa não é transporte", () => {
       if (c.via === "a pé" && c.commuteMin > 60) expect(c.hits).not.toContain("transporte");
     }
     expect(out.cells.some((c) => c.via === "a pé" && c.commuteMin > 60)).toBe(true);
+  });
+});
+
+describe("nome das regiões (nunca coordenadas)", () => {
+  const box = { south: -22.85, north: -22.65, west: -47.25, east: -47.05 }; // ~22 km
+  const idx = (ps: { lat: number; lng: number; name: string; rank: number }[]) => new PointIndex(ps, 2000, -22.75);
+
+  it("bairro perto: o mais importante entre os próximos", () => {
+    const places = idx([
+      { lat: -22.751, lng: -47.15, name: "Loteamento X", rank: 2.5 },
+      { lat: -22.752, lng: -47.151, name: "Centro", rank: 0 },
+    ]);
+    expect(placeName({ lat: -22.75, lng: -47.15 }, places, box, "Paulínia")).toBe("Centro");
+  });
+
+  it("sem bairro perto: o mais próximo até 6 km; sem nenhum, a cidade e a zona", () => {
+    const places = idx([{ lat: -22.75, lng: -47.15, name: "Nova Paulínia", rank: 0 }]);
+    expect(placeName({ lat: -22.785, lng: -47.15 }, places, box, "Paulínia")).toBe("Nova Paulínia"); // ~3,9 km
+    expect(placeName({ lat: -22.66, lng: -47.15 }, idx([]), box, "Paulínia")).toBe("Paulínia, zona norte");
+    expect(placeName({ lat: -22.84, lng: -47.06 }, idx([]), box, "Paulínia")).toBe("Paulínia, zona sudeste");
+    expect(placeName({ lat: -22.75, lng: -47.15 }, idx([]), box, "Paulínia")).toBe("Paulínia, centro");
+  });
+
+  it("parsePlaceNames: bairro oficial (limite) e loteamento com centro, sem nome fica de fora", () => {
+    const out = parsePlaceNames([
+      {
+        type: "relation",
+        id: 1,
+        center: { lat: -22.7, lon: -47.1 },
+        tags: { boundary: "administrative", admin_level: "10", name: "Betel" },
+      },
+      {
+        type: "way",
+        id: 2,
+        center: { lat: -22.71, lon: -47.11 },
+        tags: { landuse: "residential", name: "Residencial Flora" },
+      },
+      { type: "way", id: 3, center: { lat: -22.72, lon: -47.12 }, tags: { landuse: "residential" } },
+      { type: "node", id: 4, lat: -22.73, lon: -47.13, tags: { place: "suburb", name: "São José" } },
+    ]);
+    expect(out.map((p) => [p.name, p.rank])).toEqual([
+      ["Betel", 0],
+      ["Residencial Flora", 2.5],
+      ["São José", 0],
+    ]);
   });
 });
