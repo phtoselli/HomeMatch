@@ -21,6 +21,10 @@
     "app": "node scripts/app.mjs",
     "build:vercel": "npm run build && node scripts/build-vercel.mjs",
     "preview:vercel": "node scripts/preview-vercel.mjs",
+    "build:cloudflare": "npm run build && node scripts/build-cloudflare.mjs",
+    "dev:cloudflare": "wrangler dev --port 8788",
+    "preview:cloudflare": "npm run build:cloudflare && npm run dev:cloudflare",
+    "deploy:cloudflare": "npm run build:cloudflare && wrangler deploy",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "npm run typecheck --workspaces --if-present",
@@ -46,7 +50,8 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.72.2",
     "vite": "^5.4.14",
-    "vitest": "^2.1.9"
+    "vitest": "^2.1.9",
+    "wrangler": "^4.164.0"
   },
   "repository": {
     "type": "git",

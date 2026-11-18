@@ -83,6 +83,12 @@ npm run build:vercel   # what Vercel runs on every push to main (.vercel/output)
 npm run preview:vercel # serves that build locally with Vercel's headers (local API on :3333)
 ```
 
-Production: Vercel project `home-match` (https://home-match-delta.vercel.app), deploys on every push to `main`.
-The folder is linked through the CLI (`.vercel/project.json`); in PowerShell use `vercel.cmd` (`vercel.cmd ls`,
-`vercel.cmd logs <url>`, `vercel.cmd env ls`).
+Production:
+
+- App: Cloudflare Worker `home-match` (`wrangler.jsonc`, `apps/edge`) on https://home-match.pedrotoselli.com, free
+  plan. It serves `apps/web/dist` and forwards `/api/*` to the Vercel API. Workers Builds deploys on every push to
+  `main` (`npm run build:cloudflare` + `npx wrangler deploy`). Do not move the API onto the Worker without the
+  Workers Paid plan (10 ms CPU / 50 subrequests on free).
+- API: Vercel project `home-match` (https://home-match-delta.vercel.app), also deploys on every push to `main`. Keep
+  it: the Worker depends on it. The folder is linked through the CLI (`.vercel/project.json`); in PowerShell use
+  `vercel.cmd` (`vercel.cmd ls`, `vercel.cmd logs <url>`, `vercel.cmd env ls`).

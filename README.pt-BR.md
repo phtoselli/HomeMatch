@@ -11,7 +11,7 @@ Sem cadastro e sem banco de dados: favoritos e preferências ficam no seu navega
 
 > 🇺🇸 Read in English: [README.md](README.md)
 
-No ar: <https://home-match-delta.vercel.app>
+No ar: <https://home-match.pedrotoselli.com>
 
 ---
 

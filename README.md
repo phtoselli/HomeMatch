@@ -10,7 +10,7 @@ No account and no database: your favorites and preferences stay in your own brow
 
 > 🇧🇷 Leia em português: [README.pt-BR.md](README.pt-BR.md)
 
-Live demo: <https://home-match-delta.vercel.app>
+Live: <https://home-match.pedrotoselli.com>
 
 ---
 
@@ -86,6 +86,19 @@ npm run check      # all of the above + build (what CI runs)
 
 Production build without the helper script: `npm run build && npm start` (the server serves the app on
 <http://localhost:3333>).
+
+### Deployment
+
+- **App:** a Cloudflare Worker (`apps/edge`, `wrangler.jsonc`) serves the static app on
+  <https://home-match.pedrotoselli.com> and forwards `/api/*` to the API. Workers Builds deploys it on every push to
+  `main` (`npm run build:cloudflare`, then `npx wrangler deploy`). It fits the Workers free plan.
+- **API:** the Fastify API runs as a Vercel function (`npm run build:vercel`), also deployed on every push to `main`.
+  The analysis needs more CPU per request than the Workers free plan allows, so the Worker only forwards to it.
+
+```bash
+npm run preview:cloudflare   # the Worker locally on http://localhost:8788 (API from Vercel)
+npm run deploy:cloudflare    # manual deploy (needs `npx wrangler login`)
+```
 
 ### Project structure
 

@@ -12,6 +12,12 @@
       "runtimeExecutable": "npm.cmd",
       "runtimeArgs": ["run", "preview:vercel"],
       "port": 4173
+    },
+    {
+      "name": "cloudflare-preview",
+      "runtimeExecutable": "npm.cmd",
+      "runtimeArgs": ["run", "dev:cloudflare"],
+      "port": 8788
     }
   ]
 }

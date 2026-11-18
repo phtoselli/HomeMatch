@@ -9,8 +9,9 @@ sources on demand, with a cache.
 - **No database and no login.** Preferences and favorites stay on the device (`localStorage`, keys
   `homematch:<name>`; keys saved by older versions under `mapa-aluguel:` are migrated once at startup). The server
   stores nothing that must survive a deploy.
-- **Zero cost.** Everything in one Vercel project (Hobby plan, personal and non-commercial use), linked to GitHub:
-  every push to `main` deploys.
+- **Zero cost.** A Cloudflare Worker on the free plan serves the app on `home-match.pedrotoselli.com`; the API is a
+  Vercel function (Hobby plan, personal and non-commercial use). Both are linked to GitHub: every push to `main`
+  deploys.
 - **Respect the sources.** robots.txt, per-host pacing, cache, no working around blocks, public pages only.
 - **Privacy.** The work address only goes through the API during the analysis and is not stored. The PDF export is
   built in the browser.
@@ -22,9 +23,12 @@ sources on demand, with a cache.
 ```
  Browser (React + Leaflet)
    favorites, filters, lines and last search in localStorage; PDF export
-        │ HTTPS, same origin
+        │ HTTPS, same origin (home-match.pedrotoselli.com)
+ Cloudflare Worker "home-match" (apps/edge, free plan)
+   ├─ static assets: the app (apps/web/dist) + _headers (security headers)
+   └─ /api/*: forwarded as is, streaming both ways
+        │
  Vercel
-   ├─ CDN: static app (apps/web/dist)
    └─ /api/*: Node function in São Paulo (gru1) = the Fastify API (apps/api)
           │  two-level cache: the instance's /tmp + Vercel Runtime Cache
           ▼
@@ -39,6 +43,7 @@ npm workspaces:
 apps/
   web/          React 18 + Vite: UI and browser state only
   api/          Fastify: thin routes → services → sources and domain
+  edge/         Cloudflare Worker: serves the app and forwards /api/* to the API
 packages/
   contracts/    zod schemas of the API and derived types (single source); zod-free constants in /constants
   domain/       pure rules: geo, commute, grid and score, filters, "what does not match", lines and timetables
@@ -263,7 +268,26 @@ city and the cache almost always hits.
 - **Overpass:** user text is always escaped inside queries.
 - **Dependencies:** `npm audit` (production, high level) in CI.
 
-## 8. Deploying to Vercel
+## 8. Deployment
+
+### Cloudflare (app, `home-match.pedrotoselli.com`)
+
+`wrangler.jsonc` defines the Worker `home-match`: static assets from `apps/web/dist` (with a `_headers` file written by
+`scripts/build-cloudflare.mjs`, using the same security headers as Vercel from `scripts/security-headers.mjs`), SPA
+fallback, and `apps/edge/src/index.ts`, which only runs for `/api/*` and forwards it to `API_ORIGIN` (the Vercel
+deployment), streaming both ways. Static requests do not invoke the Worker and the proxy uses almost no CPU, so it
+fits the Workers free plan (100k requests/day). The custom domain is a Workers Custom Domain (DNS and certificate
+managed by Cloudflare).
+
+Workers Builds (Worker → Settings → Build, connected to the GitHub repo) runs `npm run build:cloudflare` and
+`npx wrangler deploy` on every push to `main`. Locally: `npm run preview:cloudflare`; manual deploy:
+`npm run deploy:cloudflare`.
+
+Why the API is not on Workers: the free plan allows 10 ms of CPU and 50 external requests per call; the city
+analysis parses megabytes of OpenStreetMap data and the listing search reads dozens of sites. Moving it would need
+Workers Paid (or a container) and replacing the disk cache and the undici network guard.
+
+### Vercel (API)
 
 Vercel runs `npm ci` and `npm run build:vercel` on every push to `main`. `scripts/build-vercel.mjs` builds
 `.vercel/output` (Build Output API), which Vercel deploys as is: `static/` on the CDN and `functions/api.func` (the
