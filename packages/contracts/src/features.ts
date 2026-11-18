@@ -1,12 +1,12 @@
 import { z } from "zod";
 
-/** Uma característica que a pessoa quer ter perto de casa (mercado, parque…). */
+/** Something the user wants near home (grocery store, park…). */
 export const featureDefSchema = z.object({
   id: z.string(),
   label: z.string(),
   emoji: z.string(),
   color: z.string(),
-  /** Metros. */
+  /** Meters. */
   defaultRadius: z.number(),
   description: z.string(),
 });
@@ -14,9 +14,9 @@ export type FeatureDef = z.infer<typeof featureDefSchema>;
 
 export const featureRequestSchema = z.object({
   id: z.string(),
-  /** Metros. */
+  /** Meters. */
   radius: z.number().min(100).max(10_000),
-  /** Importância: 3 = principal, 2 = importante, 1 = bom ter. */
+  /** Importance: 3 = main, 2 = important, 1 = nice to have. */
   weight: z.number().int().min(1).max(3).default(2),
 });
 export type FeatureRequest = z.infer<typeof featureRequestSchema>;

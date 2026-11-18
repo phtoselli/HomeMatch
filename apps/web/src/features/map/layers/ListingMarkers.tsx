@@ -18,7 +18,7 @@ function priceIcon(l: Listing & { index?: number }, selected: boolean, numbered?
   });
 }
 
-/** Pins de preço dos imóveis (ou numerados, em "Meus links"). */
+/** Price pins for listings (or numbered, for pasted links). */
 export function ListingMarkers({
   listings,
   analysis,
@@ -63,7 +63,7 @@ export function ListingMarkers({
     [listings, lookup, onSelect],
     visible,
   );
-  // Seleção: troca só o ícone dos dois pins envolvidos (sem refazer a camada).
+  // Selection: only swap the icons of the two pins involved (without rebuilding the layer).
   const prev = useRef<string | null>(null);
   useEffect(() => {
     for (const id of [prev.current, selectedId]) {

@@ -4,7 +4,7 @@ import { useMap, useMapEvents } from "react-leaflet";
 import type { BBox, LatLng } from "@homematch/contracts";
 import type { FitTarget } from "../types";
 
-/** Controles sem desenho: enquadramento, clique para marcar o trabalho e botões de zoom. */
+/** Invisible controls: fitting, click to mark work and zoom buttons. */
 
 export function FitBounds({ fit }: { fit: FitTarget }) {
   const map = useMap();

@@ -3,7 +3,7 @@ import type { PlaceResult } from "@homematch/contracts";
 import { addressVariants, rankAddresses } from "../src/osm/nominatim.js";
 
 describe("addressVariants", () => {
-  it("endereço do Google Maps com empresa, loteamento, UF e CEP", () => {
+  it("Google Maps address with company, development, state and postcode", () => {
     const v = addressVariants("Evolucional - R. Embiruçu, 185 - Lot. Alphaville Campinas, Campinas - SP, 13098-320");
     expect(v[0]).toContain("Evolucional");
     expect(v).toContain("R. Embiruçu, 185, Campinas");
@@ -13,17 +13,17 @@ describe("addressVariants", () => {
     expect(v.some((x) => /13098|Evolucional|- SP/.test(x) && x !== v[0])).toBe(false);
   });
 
-  it("avenida com número sem vírgula", () => {
+  it("avenue with a number and no comma", () => {
     const v = addressVariants("Av. Paulista 1578, Bela Vista, São Paulo - SP");
     expect(v).toContain("Av. Paulista, 1578, São Paulo");
   });
 
-  it("texto simples continua igual", () => {
+  it("plain text stays the same", () => {
     expect(addressVariants("Shopping Iguatemi Campinas")).toEqual(["Shopping Iguatemi Campinas"]);
   });
 });
 
-describe("rankAddresses (trabalho em outra cidade)", () => {
+describe("rankAddresses (work in another city)", () => {
   const cosmopolis = { south: -22.7, north: -22.55, west: -47.3, east: -47.1 };
   const place = (city: string, lat: number, lng: number): PlaceResult => ({
     osmId: "W1",
@@ -39,12 +39,12 @@ describe("rankAddresses (trabalho em outra cidade)", () => {
   const emCampinas = place("Campinas", -22.9, -47.06);
   const emPaulinia = place("Paulínia", -22.76, -47.15);
 
-  it("a cidade escrita no endereço vem primeiro, mesmo fora da cidade escolhida", () => {
+  it("the city written in the address comes first, even outside the chosen city", () => {
     const r = rankAddresses([emPaulinia, emCosmopolis, emCampinas], "Avenida Brasil, 500, campinas", cosmopolis);
     expect(r[0]).toBe(emCampinas);
   });
 
-  it("sem cidade no endereço, prefere o que está na cidade onde vai morar", () => {
+  it("without a city in the address, prefers results in the city where the user will live", () => {
     const r = rankAddresses([emPaulinia, emCampinas, emCosmopolis], "Avenida Brasil, 500", cosmopolis);
     expect(r[0]).toBe(emCosmopolis);
     expect(r.slice(1)).toEqual([emPaulinia, emCampinas]);

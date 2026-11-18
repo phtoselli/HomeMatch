@@ -2,20 +2,21 @@ import { create } from "zustand";
 import type { BBox, BusLine, CityRef, LatLng } from "@homematch/contracts";
 import { api } from "@/shared/api/client";
 import { readSaved, writeSaved } from "@/shared/lib/persist";
+import { t } from "@homematch/i18n";
 
 type Update = BusLine[] | ((prev: BusLine[]) => BusLine[]);
 
 interface LinesState {
-  /** Linhas que a pessoa pôs no mapa (pelo número ou "perto do trabalho"). */
+  /** Lines the user put on the map (by number or "near work"). */
   lines: BusLine[];
-  /** Ids salvos que não voltaram (Overpass fora do ar etc.): continuam salvos para a próxima vez. */
+  /** Saved ids that did not come back (Overpass down etc.): they stay saved for next time. */
   unrestored: string[];
   restoring: boolean;
-  /** Busca de novo as linhas salvas (guarda só o id; o servidor tem cache). */
+  /** Fetches the saved lines again (only ids are saved; the server has a cache). */
   restore: (city: CityRef | null, work?: LatLng | null) => Promise<void>;
-  /** Mudança vinda da tela (adicionar, remover, limpar): remover também esquece as que não voltaram. */
+  /** A change from the UI (add, remove, clear): removing also forgets the ones that did not come back. */
   setLines: (v: Update) => void;
-  /** Põe uma linha no mapa pelo número; devolve a frase para mostrar. */
+  /** Puts a line on the map by number; returns the sentence to display. */
   addLine: (q: string, city: CityRef | null, box: BBox | undefined, work?: LatLng | null) => Promise<string>;
 }
 
@@ -58,7 +59,7 @@ export const useLines = create<LinesState>()((set, get) => ({
   async addLine(q, city, box, work) {
     try {
       const found = await api.bus(q, box, city, work);
-      if (!found.length) return `Não achei a linha "${q}"${city ? ` em ${city.name}` : ""}.`;
+      if (!found.length) return t.ui.transit.lineNotFound(q, city?.name);
       get().setLines((prev) => [...prev.filter((l) => !found.some((f) => f.id === l.id)), ...found]);
       const stops = found.reduce((n, l) => n + l.stops.length, 0);
       return `Linha ${found[0]!.ref ?? q} no mapa (${found.length} ${found.length === 1 ? "sentido" : "sentidos"}, ${stops} pontos).`;
@@ -68,8 +69,8 @@ export const useLines = create<LinesState>()((set, get) => ({
   },
 }));
 
-// Salva os ids (as que estão no mapa + as que não voltaram). Durante a restauração não grava,
-// senão a lista salva vira [] antes de as linhas chegarem.
+// Saves the ids (lines on the map + those that did not come back). Nothing is written while restoring,
+// otherwise the saved list would become [] before the lines arrive.
 useLines.subscribe((s, prev) => {
   if (s.restoring || (s.lines === prev.lines && s.unrestored === prev.unrestored && s.restoring === prev.restoring))
     return;

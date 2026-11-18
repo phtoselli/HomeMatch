@@ -7,11 +7,11 @@ import { searchRoutes } from "./routes/search.js";
 import { transitRoutes } from "./routes/transit.js";
 
 /**
- * Monta a API sem abrir a porta: o main.ts escuta, os testes usam `app.inject`.
- * Rotas em /api (o app chama sempre pelo mesmo caminho, no Vite e em produção).
+ * Builds the API without opening a port: main.ts listens, tests use `app.inject`.
+ * Routes live under /api (the app always calls the same path, in Vite and in production).
  */
 export async function buildApp(env: Pick<Env, "LOG_LEVEL" | "serveWeb" | "WEB_DIST">) {
-  // 2 MB cabe com folga o limite da maior cidade (São Paulo tem ~150 KB) e barra corpos absurdos.
+  // 2 MB easily fits the boundary of the largest city (São Paulo is ~150 KB) and rejects absurd bodies.
   const app = Fastify({ logger: { level: env.LOG_LEVEL }, bodyLimit: 2 * 1024 * 1024 });
   registerErrorHandler(app);
 
@@ -25,7 +25,7 @@ export async function buildApp(env: Pick<Env, "LOG_LEVEL" | "serveWeb" | "WEB_DI
     { prefix: "/api" },
   );
 
-  // Uso local (npm run app): o próprio servidor entrega o mapa já montado.
+  // Local use (npm run app): the server itself serves the built app.
   if (env.serveWeb) await app.register(fastifyStatic, { root: env.WEB_DIST });
   return app;
 }

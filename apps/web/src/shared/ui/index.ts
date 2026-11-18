@@ -1,10 +1,15 @@
-// Peças de interface reutilizáveis (sem regra de negócio). Estilo em CSS Modules + tokens de styles/tokens.css.
-export { ErrorAlert } from "./Alert";
-export { CloseButton } from "./CloseButton";
-export { ExternalLink } from "./ExternalLink";
-export { AMENITY_ICON, FEATURE_ICON, Icon, iconSvg, type IconName } from "./Icon";
-export { Modal } from "./Modal";
-export { Photo } from "./Photo";
-export { Segmented, type SegmentedOption } from "./Segmented";
-export { Spinner } from "./Spinner";
-export { Switch } from "./Switch";
+// Reusable UI pieces (no business rules), organized by Atomic Design:
+//   atoms/      smallest building blocks (icon, spinner, switch, link, photo)
+//   molecules/  a few atoms working together (alert, segmented control, switch with label)
+//   organisms/  self-contained sections (modal)
+// Styled with CSS Modules + tokens from styles/tokens.css.
+export { CloseButton } from "./atoms/CloseButton";
+export { ExternalLink } from "./atoms/ExternalLink";
+export { AMENITY_ICON, FEATURE_ICON, Icon, iconSvg, type IconName } from "./atoms/Icon";
+export { Photo } from "./atoms/Photo";
+export { Spinner } from "./atoms/Spinner";
+export { Switch } from "./atoms/Switch";
+export { ErrorAlert } from "./molecules/Alert";
+export { Segmented, type SegmentedOption } from "./molecules/Segmented";
+export { SwitchField } from "./molecules/SwitchField";
+export { Modal } from "./organisms/Modal";

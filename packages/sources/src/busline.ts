@@ -3,12 +3,12 @@ import { distance } from "@homematch/domain";
 import { DAY } from "./http.js";
 import { bboxQL, overpass, type OsmElement } from "./osm/overpass.js";
 import { MODES } from "@homematch/domain";
+import { t } from "@homematch/i18n";
 
 /**
- * Acha uma linha de transporte no OpenStreetMap e devolve o traçado exato (vias da relação).
- * Aceita: número da linha ("875A-10", "609F", "Linha 4"), link do OSM (…/relation/123),
- * link do itinerário da SPTrans (…?cdp=170211, guardado na tag `website` da linha no OSM)
- * ou outro link que contenha o número da linha (Moovit etc.).
+ * Finds a transit line in OpenStreetMap and returns its exact geometry (the relation's ways).
+ * Accepts: line number ("875A-10", "609F", "Linha 4"), OSM link (…/relation/123), SPTrans itinerary link
+ * (…?cdp=170211, stored in the line's `website` tag in OSM) or any other link containing the line number (Moovit…).
  */
 export type BusQuery =
   | { kind: "osm"; id: string }
@@ -19,7 +19,7 @@ const ROUTE_RE = "^(bus|trolleybus|minibus|share_taxi|subway|train|light_rail|tr
 
 const escRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\"]/g, "\\$&");
 
-/** Candidatos a número de linha dentro de um texto/URL ("875A-10", "6450", "N137"). */
+/** Line number candidates inside a text/URL ("875A-10", "6450", "N137"). */
 export function refCandidates(s: string): string[] {
   const out = new Set<string>();
   for (const m of s.toUpperCase().matchAll(/\b([A-Z]?\d{2,4}[A-Z]?(?:-\d{1,2})?)\b/g)) out.add(m[1]!);
@@ -38,6 +38,7 @@ export function parseBusQuery(raw: string): BusQuery {
       : escRe(`${u.host.replace(/^www\./, "")}${u.pathname}`.replace(/\/$/, ""));
     return { kind: "website", pattern, refs: refCandidates(decodeURIComponent(u.pathname + " " + u.search)) };
   }
+  // Users type "linha 353" / "ônibus 353" (Portuguese) or "bus 353".
   const text = q.replace(/^(linha|ônibus|onibus|bus)\s+/i, "").trim();
   return { kind: "ref", refs: refCandidates(text).length ? refCandidates(text) : [text.toUpperCase()], text };
 }
@@ -49,12 +50,12 @@ export function buildBusQuery(q: BusQuery, bbox?: BBox): string {
   if (q.kind === "osm") sel = `rel(${q.id});`;
   else if (q.kind === "website") {
     sel = `${base}["website"~"${q.pattern}",i]${bb};${base}["url"~"${q.pattern}",i]${bb};`;
-    // sem resultado pelo link, o número da linha extraído do link entra como alternativa
+    // when the link finds nothing, the line number extracted from it is the fallback
     sel += q.refs.map((r) => `${base}["ref"~"^${escRe(r)}(-[0-9]+)?$",i]${bb};`).join("");
   } else {
     sel = q.refs.map((r) => `${base}["ref"~"^${escRe(r)}(-[0-9]+)?$",i]${bb};`).join("");
     if (q.text.length >= 4) sel += `${base}["name"~"${escRe(q.text)}",i]${bb};`;
-    // Linhas sem a tag ref, só com o número no nome ("Linha 353 ESTAÇÃO …")
+    // Lines without a ref tag, with the number only in the name ("Linha 353 ESTAÇÃO …")
     else if (/^[0-9]{2,4}[A-Z]?$/i.test(q.text))
       sel += `${base}["name"~"(^|[^0-9])${escRe(q.text)}([^0-9]|$)",i]${bb};`;
   }
@@ -66,19 +67,19 @@ function mode(route: string | undefined): TransitMode {
   return (route in MODES ? route : "bus") as TransitMode;
 }
 
-/** Parse puro da resposta (relações com `out geom` + nós com tags). */
+/** Pure parsing of the response (relations with `out geom` + tagged nodes). */
 export function parseBusLines(elements: OsmElement[], q?: BusQuery, max = 8): BusLine[] {
   const nodeNames = new Map<number, string>();
   for (const e of elements) if (e.type === "node" && e.tags?.name) nodeNames.set(e.id, e.tags.name);
 
   let rels = elements.filter((e) => e.type === "relation" && e.members);
-  // Link de site: se algum casou pela tag website/url, ignora os que vieram só pelo número.
+  // Website link: if any relation matched by its website/url tag, ignore those that matched only by number.
   if (q?.kind === "website") {
     const re = new RegExp(q.pattern, "i");
     const byLink = rels.filter((r) => re.test(r.tags?.website ?? "") || re.test(r.tags?.url ?? ""));
     if (byLink.length) rels = byLink;
   }
-  // Número exato primeiro (875A-10 antes de 875A-11 quando o pedido foi 875A-10).
+  // Exact number first (875A-10 before 875A-11 when 875A-10 was requested).
   const wanted = q && "refs" in q ? q.refs : [];
   rels.sort(
     (a, b) =>
@@ -88,7 +89,7 @@ export function parseBusLines(elements: OsmElement[], q?: BusQuery, max = 8): Bu
 
   const out: BusLine[] = [];
   for (const r of rels.slice(0, max)) {
-    const t = r.tags ?? {};
+    const tags = r.tags ?? {};
     const segments: [number, number][][] = [];
     const stops: BusLine["stops"] = [];
     const pushStop = (lat: number, lng: number, name?: string) => {
@@ -116,18 +117,18 @@ export function parseBusLines(elements: OsmElement[], q?: BusQuery, max = 8): Bu
       }
     }
     if (!segments.length && stops.length < 2) continue;
-    const md = mode(t.route);
+    const md = mode(tags.route);
     out.push({
       id: String(r.id),
-      ref: t.ref,
-      name: t.name || [t.ref, t.to].filter(Boolean).join(" → ") || `Linha ${r.id}`,
-      from: t.from,
-      to: t.to,
+      ref: tags.ref,
+      name: tags.name || [tags.ref, tags.to].filter(Boolean).join(" → ") || t.transit.lineName(String(r.id)),
+      from: tags.from,
+      to: tags.to,
       mode: md,
-      color: /^#[0-9a-f]{3,6}$/i.test(t.colour ?? "") ? t.colour! : MODES[md].color,
-      operator: t.operator ?? t.network,
-      website: t.website ?? t.url,
-      // sem vias mapeadas, liga as paradas em ordem
+      color: /^#[0-9a-f]{3,6}$/i.test(tags.colour ?? "") ? tags.colour! : MODES[md].color,
+      operator: tags.operator ?? tags.network,
+      website: tags.website ?? tags.url,
+      // without mapped ways, connect the stops in order
       segments: segments.length ? segments : [stops.map((s) => [s.lat, s.lng] as [number, number])],
       stops,
     });
@@ -137,13 +138,12 @@ export function parseBusLines(elements: OsmElement[], q?: BusQuery, max = 8): Bu
 
 export async function findBusLines(raw: string, bbox?: BBox): Promise<BusLine[]> {
   const q = parseBusQuery(raw);
-  if (q.kind !== "osm" && !bbox)
-    throw new Error("Escolha a cidade antes (a busca pelo número da linha é feita dentro dela).");
+  if (q.kind !== "osm" && !bbox) throw new Error(t.transit.chooseCityFirst);
   const res = await overpass(buildBusQuery(q, bbox), 3 * DAY);
   return parseBusLines(res.elements, q);
 }
 
-/** Linhas do OSM com parada a até `radiusM` do ponto (cidades sem operador cadastrado). */
+/** OSM lines with a stop within `radiusM` of the point (cities without a registered operator). */
 export function buildNearQuery(p: LatLng, radiusM: number): string {
   const around = `around:${Math.round(radiusM)},${p.lat.toFixed(6)},${p.lng.toFixed(6)}`;
   return (
@@ -154,7 +154,7 @@ export function buildNearQuery(p: LatLng, radiusM: number): string {
 
 export async function findBusLinesNear(p: LatLng, radiusM: number, maxLines: number): Promise<BusLine[]> {
   const res = await overpass(buildNearQuery(p, radiusM), 3 * DAY);
-  // Cada sentido é uma relação: até 2 por linha.
+  // Each direction is a relation: up to 2 per line.
   const lines = parseBusLines(res.elements, undefined, maxLines * 2).map((l) => ({
     ...l,
     source: "osm",

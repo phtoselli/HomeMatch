@@ -1,2 +1,2 @@
-export { LinksPanel } from "./components/LinksPanel";
+export { LinksPanel } from "./components/organisms/LinksPanel";
 export { useLinks } from "./model/links";

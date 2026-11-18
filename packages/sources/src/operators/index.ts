@@ -2,7 +2,7 @@ import type { PlaceResult } from "@homematch/contracts";
 import { emdec } from "./emdec.js";
 import type { TransitOperator } from "./types.js";
 
-// Cadastro de operadores por cidade. Para adicionar uma cidade: um arquivo com o adaptador + entrada aqui.
+// Registry of operators per city. To add a city: a file with the adapter + an entry here.
 export const OPERATORS: TransitOperator[] = [emdec];
 
 export function operatorFor(

@@ -3,12 +3,13 @@ import type { LatLng } from "@homematch/contracts";
 import { safeExternalUrl } from "@homematch/domain";
 import { firstInt, parseBRL } from "../normalize.js";
 import type { RawListing } from "./types.js";
+import { t } from "@homematch/i18n";
 
 /**
- * Leitura genérica de anúncios publicados em schema.org (JSON-LD), o formato que o Google pede aos sites.
- * Serve para portais (Chaves na Mão) e para muitos sites de imobiliária, sem código próprio de cada um.
- * Entende: Offer com itemOffered (imóvel), RealEstateListing com offers, Product com offers e
- * additionalProperty, e Residence/Apartment/House soltos.
+ * Generic reader of listings published as schema.org (JSON-LD), the format Google asks sites for.
+ * Works for portals (Chaves na Mão) and many agency websites, with no site-specific code.
+ * Understands: Offer with itemOffered (property), RealEstateListing with offers, Product with offers and
+ * additionalProperty, and standalone Residence/Apartment/House. Text patterns match Brazilian (Portuguese) pages.
  */
 type Json = Record<string, unknown>;
 
@@ -16,25 +17,25 @@ const LISTING_TYPES =
   /^(RealEstateListing|Product|Accommodation|Residence|Apartment|House|SingleFamilyResidence|Room|Suite)$/;
 const PLACE_TYPES = /^(Accommodation|Residence|Apartment|House|SingleFamilyResidence|Room|Suite|Place)$/;
 
-/** Tipo schema.org → rótulo (Residence/Accommodation são genéricos: o tipo sai do título). */
+/** schema.org type → label (Residence/Accommodation are generic: the type comes from the title). */
 const TYPE_LABEL: Record<string, string> = {
-  Apartment: "Apartamento",
-  House: "Casa",
-  SingleFamilyResidence: "Casa",
-  Room: "Quarto",
-  Suite: "Studio",
+  Apartment: t.listings.propertyTypes.apartment,
+  House: t.listings.propertyTypes.house,
+  SingleFamilyResidence: t.listings.propertyTypes.house,
+  Room: t.listings.room,
+  Suite: t.listings.propertyTypes.studio,
 };
 
 const typesOf = (o: Json): string[] => {
-  const t = o["@type"];
-  return (Array.isArray(t) ? t : [t]).filter((x): x is string => typeof x === "string");
+  const types = o["@type"];
+  return (Array.isArray(types) ? types : [types]).filter((x): x is string => typeof x === "string");
 };
-const isType = (o: Json, re: RegExp) => typesOf(o).some((t) => re.test(t));
+const isType = (o: Json, re: RegExp) => typesOf(o).some((type) => re.test(type));
 const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
 const num = (v: unknown): number | undefined => {
   if (typeof v === "number") return Number.isFinite(v) ? v : undefined;
   if (typeof v !== "string" || !v.trim()) return undefined;
-  // "19500", "-22.9292" → número; "R$ 1.350,00" → formato brasileiro.
+  // "19500", "-22.9292" → number; "R$ 1.350,00" → Brazilian format.
   return Number.isFinite(Number(v)) ? Number(v) : parseBRL(v);
 };
 const asObj = (v: unknown): Json | undefined =>
@@ -67,7 +68,7 @@ export function* walkJson(v: unknown): Generator<Json> {
   }
 }
 
-/** Blocos JSON-LD da página (os que não são JSON válido ficam de fora). */
+/** JSON-LD blocks of the page (invalid JSON is skipped). */
 export function jsonLdBlocks(html: string): unknown[] {
   const out: unknown[] = [];
   for (const m of html.matchAll(/<script[^>]*type=["']?application\/ld\+json["']?[^>]*>([\s\S]*?)<\/script>/gi)) {
@@ -80,7 +81,7 @@ export function jsonLdBlocks(html: string): unknown[] {
   return out;
 }
 
-/** Oferta é de aluguel? (venda e "sob consulta" ficam de fora). */
+/** Is the offer a rental? (sales and "price on request" are left out). */
 function isRentOffer(offer: Json, context: string): boolean {
   const fn = String(offer.businessFunction ?? "");
   if (/LeaseOut/i.test(fn)) return true;
@@ -89,10 +90,10 @@ function isRentOffer(offer: Json, context: string): boolean {
   const c = context.toLowerCase();
   if (/(para alugar|aluguel|locacao|locação|\/alugar|-alugar|\/aluguel)/.test(c)) return true;
   if (/(a venda|à venda|para venda|comprar|\/venda)/.test(c)) return false;
-  return true; // sem sinal: a página é de aluguel (o motor só abre páginas de aluguel)
+  return true; // no signal: the page is a rentals page (the engine only opens rentals pages)
 }
 
-/** "Casa para alugar no Jardim Dom Nery em Campinas" → bairro e cidade. */
+/** "Casa para alugar no Jardim Dom Nery em Campinas" → neighborhood and city. */
 export function placeFromName(name: string | undefined): { neighbourhood?: string; city?: string } {
   const m = name?.match(/\b(?:alugar|aluguel|loca[cç][aã]o|venda)\s+(?:no|na|em)\s+(.+?)\s+em\s+([^,|–-]+)$/i);
   return m ? { neighbourhood: m[1]!.trim(), city: m[2]!.trim() } : {};
@@ -129,7 +130,7 @@ function fromPlace(place: Json | undefined, into: Partial<RawListing>) {
     into.street ??= str(addr.streetAddress);
     const locality = str(addr.addressLocality);
     const region = str(addr.addressRegion);
-    // Alguns portais põem o bairro em addressLocality e "Cidade, UF" em addressRegion.
+    // Some portals put the neighborhood in addressLocality and "City, ST" in addressRegion.
     if (region && region.includes(",")) {
       into.neighbourhood ??= locality;
       into.cityName ??= region.split(",")[0]!.trim();
@@ -152,11 +153,11 @@ function fromPlace(place: Json | undefined, into: Partial<RawListing>) {
   }
 }
 
-/** Parse puro: anúncios de aluguel em JSON-LD de uma página (busca ou anúncio). */
+/** Pure parsing: rental listings in a page's JSON-LD (search or listing page). */
 export function parseSchemaOrgListings(html: string, pageUrl: string): RawListing[] {
   const out = new Map<string, RawListing>();
   const add = (r: Partial<RawListing>, src: Json) => {
-    if (!r.rent || r.rent < 100) return; // sem preço ou "sob consulta"
+    if (!r.rent || r.rent < 100) return; // no price or "price on request"
     const url = safeExternalUrl(r.url, pageUrl);
     if (!url) return;
     const id = idFrom(url, src);
@@ -175,7 +176,7 @@ export function parseSchemaOrgListings(html: string, pageUrl: string): RawListin
   for (const block of jsonLdBlocks(html)) {
     for (const o of walkJson(block)) {
       const types = typesOf(o);
-      // 1) Offer { itemOffered: imóvel } — ex.: Chaves na Mão.
+      // 1) Offer { itemOffered: property } — e.g. Chaves na Mão.
       if (types.includes("Offer") && asObj(o.itemOffered)) {
         const item = asObj(o.itemOffered)!;
         const title = str(o.name) ?? str(item.name);
@@ -185,13 +186,13 @@ export function parseSchemaOrgListings(html: string, pageUrl: string): RawListin
           title,
           rent: num(o.price) ?? num(asObj(o.priceSpecification)?.price),
           agency: str(asObj(o.offeredBy)?.name) ?? str(asObj(o.seller)?.name),
-          typeLabel: TYPE_LABEL[typesOf(item).find((t) => PLACE_TYPES.test(t)) ?? ""],
+          typeLabel: TYPE_LABEL[typesOf(item).find((type) => PLACE_TYPES.test(type)) ?? ""],
         };
         fromPlace(item, r);
         add(r, o);
         continue;
       }
-      // 2) Anúncio com offers (RealEstateListing, Product…) — ex.: Kenlo, Sites do Mercado.
+      // 2) Listing with offers (RealEstateListing, Product…) — e.g. Kenlo, Sites do Mercado.
       if (isType(o, LISTING_TYPES) && o.offers) {
         const title = str(o.name);
         const url = str(o.url) ?? str(o["@id"]);

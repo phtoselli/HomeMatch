@@ -2,8 +2,9 @@ import type { BBox, Listing, ListingFilters, PropertyType } from "@homematch/con
 import { BROWSER_UA, HOUR, cached, httpJson } from "../http.js";
 import { normalizeType, slugify } from "./normalize.js";
 import type { SourceAdapter } from "./types.js";
+import { t } from "@homematch/i18n";
 
-// QuintoAndar: a própria página de busca chama esta API com a área visível do mapa (viewport).
+// QuintoAndar: the site's own search page calls this API with the visible map area (viewport).
 const API = "https://apigw.prod.quintoandar.com.br/house-listing-search/v3/search/list";
 const SITE = "https://www.quintoandar.com.br";
 const PAGE_SIZE = 50;
@@ -55,20 +56,21 @@ export interface QaResponse {
   hits: { total: { value: number }; hits: QaHit[] };
 }
 
+/** QuintoAndar's own type codes → localized label. */
 const QA_TYPE_LABEL: Record<string, string> = {
-  Apartamento: "Apartamento",
-  Casa: "Casa",
-  CasaCondominio: "Casa de condomínio",
-  StudioOuKitchenette: "Studio / kitnet",
+  Apartamento: t.listings.propertyTypes.apartment,
+  Casa: t.listings.propertyTypes.house,
+  CasaCondominio: t.listings.propertyTypes.condo_house,
+  StudioOuKitchenette: t.listings.propertyTypes.studio,
 };
 
-/** Parse puro da resposta da API → anúncios de aluguel com coordenada. */
+/** Pure parsing of the API response → rental listings with coordinates. */
 export function parseQuintoAndar(json: QaResponse): Listing[] {
   const out: Listing[] = [];
   for (const h of json.hits?.hits ?? []) {
     const s = h._source;
     if (!s || s.forRent === false || !s.rent || !s.location) continue;
-    const typeLabel = QA_TYPE_LABEL[s.type ?? ""] ?? s.type ?? "Imóvel";
+    const typeLabel = QA_TYPE_LABEL[s.type ?? ""] ?? s.type ?? t.links.property;
     const extras = s.iptuPlusCondominium ?? 0;
     out.push({
       id: `quintoandar:${s.id}`,
@@ -79,14 +81,14 @@ export function parseQuintoAndar(json: QaResponse): Listing[] {
       typeLabel,
       rent: s.rent,
       total: s.totalCost ?? s.rent + extras,
-      condo: extras || undefined, // a API devolve condomínio + IPTU somados
+      condo: extras || undefined, // the API returns condo fee + tax summed
       area: s.area,
       bedrooms: s.bedrooms,
       bathrooms: s.bathrooms,
       parking: s.parkingSpaces,
       furnished: s.isFurnished,
-      // A lista não traz descrição: só dá para saber se é mobiliado. Sem isso, "sem informação".
-      amenities: s.isFurnished ? ["mobiliado"] : undefined,
+      // The list has no description: only "furnished" can be known. Otherwise, "unknown".
+      amenities: s.isFurnished ? ["furnished"] : undefined,
       address: [s.address, s.neighbourhood ?? s.regionName].filter(Boolean).join(", "),
       neighbourhood: s.neighbourhood ?? s.regionName,
       lat: s.location.lat,
@@ -98,8 +100,8 @@ export function parseQuintoAndar(json: QaResponse): Listing[] {
   return out;
 }
 
-/** Tipos que a busca do QuintoAndar aceita (casa de condomínio não tem código conhecido: filtramos depois). */
-const QA_TYPE: Partial<Record<PropertyType, string>> = { apartamento: "APARTMENT", casa: "HOUSE", studio: "STUDIO" };
+/** Types QuintoAndar's search accepts (condo house has no known code: filtered afterwards). */
+const QA_TYPE: Partial<Record<PropertyType, string>> = { apartment: "APARTMENT", house: "HOUSE", studio: "STUDIO" };
 
 const range = (min?: number | null, max?: number | null) => ({
   range: { ...(min ? { min } : {}), ...(max ? { max } : {}) },
@@ -107,9 +109,9 @@ const range = (min?: number | null, max?: number | null) => ({
 
 export function buildQaBody(bbox: BBox, citySlug: string, offset: number, f?: ListingFilters) {
   const center = { lat: (bbox.north + bbox.south) / 2, lng: (bbox.east + bbox.west) / 2 };
-  // Só manda o tipo quando todos os escolhidos têm código; senão busca tudo e o servidor filtra.
-  const types = f?.types.length && f.types.every((t) => QA_TYPE[t]) ? f.types.map((t) => QA_TYPE[t]!) : [];
-  // O site só filtra pelo custo total; no modo "só aluguel" o servidor filtra depois.
+  // Only send the type when every chosen one has a code; otherwise search everything and let the server filter.
+  const types = f?.types.length && f.types.every((x) => QA_TYPE[x]) ? f.types.map((x) => QA_TYPE[x]!) : [];
+  // The site only filters by total cost; in "rent only" mode the server filters afterwards.
   const priceRange =
     f && f.basis === "total" && (f.priceMin || f.priceMax)
       ? [{ costType: "TOTAL_COST", ...range(f.priceMin, f.priceMax) }]
@@ -178,7 +180,7 @@ export const quintoAndar: SourceAdapter = {
       );
       const page = parseQuintoAndar(json);
       out.push(...page);
-      log(`QuintoAndar · ${region.name}: ${out.length} de ${json.hits?.total?.value ?? "?"} anúncios`);
+      log(t.sources.quintoandarFound(region.name, out.length, json.hits?.total?.value));
       if ((json.hits?.hits?.length ?? 0) < PAGE_SIZE) break;
     }
     return out.slice(0, max);

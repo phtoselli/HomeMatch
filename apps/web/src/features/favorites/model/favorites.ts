@@ -5,7 +5,7 @@ import { persistFields, readSaved } from "@/shared/lib/persist";
 export type ListMode = "all" | "fav";
 
 interface FavoritesState {
-  /** O anúncio inteiro: a busca não fica salva, os favoritos sim (e continuam aparecendo sem buscar de novo). */
+  /** The whole listing: searches are not saved, favorites are (and keep showing without searching again). */
   favorites: Record<string, Listing>;
   listMode: ListMode;
   toggle: (l: Listing) => void;

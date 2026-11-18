@@ -8,37 +8,37 @@ import { parseVivaReal } from "../../src/listings/vivareal.js";
 
 const fx = (f: string) => readFileSync(join(__dirname, "..", "fixtures", f), "utf8");
 
-describe("comodidades nos parsers (fixtures reais)", () => {
-  it("QuintoAndar lista: isFurnished vira 'mobiliado'; senão sem informação", () => {
+describe("amenities in the parsers (real fixtures)", () => {
+  it("QuintoAndar list: isFurnished becomes 'furnished'; otherwise unknown", () => {
     const all = parseQuintoAndar(JSON.parse(fx("quintoandar-list.json")) as QaResponse);
     expect(all.length).toBeGreaterThan(0);
-    for (const l of all) expect(l.amenities).toEqual(l.furnished ? ["mobiliado"] : undefined);
+    for (const l of all) expect(l.amenities).toEqual(l.furnished ? ["furnished"] : undefined);
   });
 
-  it("VivaReal busca: títulos sem comodidade não inventam nada", () => {
+  it("VivaReal search: titles without amenities invent nothing", () => {
     for (const c of parseVivaReal(fx("vivareal-search.html"))) {
       expect(c.amenities === undefined || c.amenities.length > 0).toBe(true);
     }
   });
 
-  it("detalhe QuintoAndar: amenityFeature (armários) + descrição ('mobiliado')", () => {
+  it("QuintoAndar detail: amenityFeature (cabinets) + description ('furnished')", () => {
     const i = extractListingInfo(
       fx("quintoandar-detail.html"),
       "https://www.quintoandar.com.br/imovel/894444193/alugar",
     );
-    expect(i.amenities).toEqual(["armario_cozinha", "armario_quarto", "mobiliado"]);
+    expect(i.amenities).toEqual(["kitchen_cabinets", "wardrobe", "furnished"]);
   });
 
-  it("detalhe VivaReal: 'cozinha espaçosa' não conta como armário", () => {
+  it("VivaReal detail: 'cozinha espaçosa' does not count as cabinets", () => {
     const url =
       "https://www.vivareal.com.br/imovel/apartamento-2-quartos-pinheiros-zona-oeste-sao-paulo-com-garagem-82m2-aluguel-RS7000-id-2909698438/";
     const i = extractListingInfo(fx("vivareal-detail.html"), url);
     expect(Array.isArray(i.amenities)).toBe(true);
-    expect(i.amenities).not.toContain("armario_cozinha");
-    expect(i.amenities).not.toContain("armario_quarto");
+    expect(i.amenities).not.toContain("kitchen_cabinets");
+    expect(i.amenities).not.toContain("wardrobe");
   });
 
-  it("detalhe com amenityFeature do schema.org", () => {
+  it("detail with schema.org amenityFeature", () => {
     const html = `<script type="application/ld+json">${JSON.stringify({
       "@type": "Apartment",
       description: "Apartamento 2 dormitórios em Campinas.",
@@ -49,45 +49,45 @@ describe("comodidades nos parsers (fixtures reais)", () => {
       ],
     })}</script>`;
     expect(extractListingInfo(html, "https://exemplo.com.br/imovel/1").amenities).toEqual([
-      "armario_cozinha",
-      "armario_quarto",
+      "kitchen_cabinets",
+      "wardrobe",
     ]);
   });
 });
 
 describe("detectAmenities", () => {
-  it("armário na cozinha", () => {
-    expect(detectAmenities("Apartamento com cozinha planejada e área de serviço")).toContain("armario_cozinha");
-    expect(detectAmenities("Possui ARMÁRIOS NA COZINHA e no banheiro")).toContain("armario_cozinha");
-    expect(detectAmenities("armários de cozinha novos")).toContain("armario_cozinha");
-    expect(detectAmenities("Cozinha com armários")).toContain("armario_cozinha");
-    expect(detectAmenities("Cozinha espaçosa, área de serviço")).not.toContain("armario_cozinha");
+  it("kitchen cabinets", () => {
+    expect(detectAmenities("Apartamento com cozinha planejada e área de serviço")).toContain("kitchen_cabinets");
+    expect(detectAmenities("Possui ARMÁRIOS NA COZINHA e no banheiro")).toContain("kitchen_cabinets");
+    expect(detectAmenities("armários de cozinha novos")).toContain("kitchen_cabinets");
+    expect(detectAmenities("Cozinha com armários")).toContain("kitchen_cabinets");
+    expect(detectAmenities("Cozinha espaçosa, área de serviço")).not.toContain("kitchen_cabinets");
   });
 
-  it("guarda-roupa no quarto", () => {
-    expect(detectAmenities("Dormitório com guarda-roupa")).toContain("armario_quarto");
-    expect(detectAmenities("guarda roupas embutido")).toContain("armario_quarto");
-    expect(detectAmenities("Suíte com closet")).toContain("armario_quarto");
-    expect(detectAmenities("armário embutido nos dois quartos")).toContain("armario_quarto");
-    expect(detectAmenities("Armários planejados nos dormitórios")).toContain("armario_quarto");
-    expect(detectAmenities("Quartos planejados")).toContain("armario_quarto");
-    expect(detectAmenities("02 dormitórios, sendo 01 suíte")).not.toContain("armario_quarto");
+  it("bedroom wardrobe", () => {
+    expect(detectAmenities("Dormitório com guarda-roupa")).toContain("wardrobe");
+    expect(detectAmenities("guarda roupas embutido")).toContain("wardrobe");
+    expect(detectAmenities("Suíte com closet")).toContain("wardrobe");
+    expect(detectAmenities("armário embutido nos dois quartos")).toContain("wardrobe");
+    expect(detectAmenities("Armários planejados nos dormitórios")).toContain("wardrobe");
+    expect(detectAmenities("Quartos planejados")).toContain("wardrobe");
+    expect(detectAmenities("02 dormitórios, sendo 01 suíte")).not.toContain("wardrobe");
   });
 
-  it("pia / bancada e mobiliado", () => {
-    expect(detectAmenities("Bancada de granito com cuba inox")).toContain("pia");
-    expect(detectAmenities("Pia na cozinha")).toContain("pia");
-    expect(detectAmenities("São 25m², mobiliado, aceita animais")).toEqual(["mobiliado"]);
-    expect(detectAmenities("Semi-mobiliado")).toContain("mobiliado");
+  it("sink / countertop and furnished", () => {
+    expect(detectAmenities("Bancada de granito com cuba inox")).toContain("sink");
+    expect(detectAmenities("Pia na cozinha")).toContain("sink");
+    expect(detectAmenities("São 25m², mobiliado, aceita animais")).toEqual(["furnished"]);
+    expect(detectAmenities("Semi-mobiliado")).toContain("furnished");
     expect(detectAmenities("Espiar a piada")).toEqual([]);
   });
 
-  it("texto vazio e combinação", () => {
+  it("empty text and combinations", () => {
     expect(detectAmenities(undefined)).toEqual([]);
     expect(detectAmenities("Cozinha planejada com pia e bancada; guarda-roupa no quarto")).toEqual([
-      "armario_cozinha",
-      "armario_quarto",
-      "pia",
+      "kitchen_cabinets",
+      "wardrobe",
+      "sink",
     ]);
   });
 });

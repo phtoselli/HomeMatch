@@ -1,15 +1,17 @@
-// Textos curtos em pt-BR (dinheiro, distância) usados nos rótulos do domínio e da tela.
+import { LOCALE_TAG, t } from "@homematch/i18n";
 
-const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+// Short localized texts (money, distance) used by domain and UI labels.
 
-export const money = (n: number) => brl.format(n);
+const currency = new Intl.NumberFormat(LOCALE_TAG, { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+const decimal = new Intl.NumberFormat(LOCALE_TAG, { maximumFractionDigits: 1 });
 
-/** "R$ 3,2 mil": curto, para o marcador no mapa. */
+export const money = (n: number) => currency.format(n);
+
+/** Compact amount for map markers ("R$ 3,2 mil"). */
 export function moneyShort(n: number): string {
-  if (n >= 1000) return `R$ ${(n / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mil`;
-  return `R$ ${Math.round(n)}`;
+  return n >= 1000 ? t.format.moneyThousands(decimal.format(n / 1000)) : t.format.money(Math.round(n));
 }
 
 export function meters(m: number): string {
-  return m >= 1000 ? `${(m / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km` : `${Math.round(m)} m`;
+  return m >= 1000 ? t.format.kilometers(decimal.format(m / 1000)) : t.format.meters(Math.round(m));
 }

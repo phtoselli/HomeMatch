@@ -1,8 +1,9 @@
-import type { Listing, ListingFilters } from "@homematch/contracts";
+import type { AmenityId, Listing, ListingFilters } from "@homematch/contracts";
+import { t } from "@homematch/i18n";
 
 /**
- * O anúncio atende ao que a pessoa procura? Usado no servidor (depois de cada site) e no mapa.
- * Comodidades ficam de fora: dependem de "sem informação" e são tratadas no navegador.
+ * Does the listing match what the user is looking for? Used on the server (after each site) and on the map.
+ * Amenities are left out: they depend on "unknown" and are handled in the browser.
  */
 export function matchesFilters(l: Listing, f: ListingFilters | undefined): boolean {
   if (!f) return true;
@@ -17,26 +18,29 @@ export function matchesFilters(l: Listing, f: ListingFilters | undefined): boole
   return true;
 }
 
-/** Filtros do mapa: os do imóvel + comodidades exigidas (com "sem informação" tratado à parte). */
+/** Map filters: the property ones + required amenities (with "unknown" handled separately). */
 export interface MapFilters extends ListingFilters {
-  /** Ids de Listing.amenities exigidos ("armario_cozinha", "armario_quarto", "pia"). */
-  amenities?: string[];
-  /** Esconde anúncios que não dizem nada sobre as comodidades exigidas. */
+  /** Required `Listing.amenities` ids. */
+  amenities?: AmenityId[];
+  /** Hides listings that say nothing about the required amenities. */
   hideUnknown?: boolean;
 }
 
-/** true/false quando o anúncio diz algo; undefined quando não há informação. Mobiliado conta como tendo armários. */
-export function hasAmenity(l: Listing, id: string): boolean | undefined {
+/** Cabinets count as present when the listing is furnished. */
+const CABINETS: AmenityId[] = ["kitchen_cabinets", "wardrobe"];
+
+/** true/false when the listing says something; undefined when there is no information. */
+export function hasAmenity(l: Listing, id: AmenityId): boolean | undefined {
   if (!l.amenities) return undefined;
   if (l.amenities.includes(id)) return true;
-  if (id.startsWith("armario_") && l.amenities.includes("mobiliado")) return true;
-  // Só "mobiliado" (lista do QuintoAndar, sem descrição): não dá para dizer que falta pia.
-  if (l.amenities.length === 1 && l.amenities[0] === "mobiliado") return undefined;
+  if (CABINETS.includes(id) && l.amenities.includes("furnished")) return true;
+  // Only "furnished" (QuintoAndar list, no description): we cannot say the sink is missing.
+  if (l.amenities.length === 1 && l.amenities[0] === "furnished") return undefined;
   return false;
 }
 
-/** 0 = tem tudo que foi pedido, 1 = sem informação, 2 = falta algo. */
-export function amenityRank(l: Listing, wanted: string[]): number {
+/** 0 = has everything requested, 1 = unknown, 2 = something is missing. */
+export function amenityRank(l: Listing, wanted: AmenityId[]): number {
   let rank = 0;
   for (const id of wanted) {
     const h = hasAmenity(l, id);
@@ -46,7 +50,7 @@ export function amenityRank(l: Listing, wanted: string[]): number {
   return rank;
 }
 
-/** O que aparece no mapa e na lista. */
+/** What shows up on the map and in the list. */
 export function applyFilters<T extends Listing>(list: T[], f: MapFilters): T[] {
   const wanted = f.amenities ?? [];
   return list.filter((l) => {
@@ -59,14 +63,8 @@ export function applyFilters<T extends Listing>(list: T[], f: MapFilters): T[] {
   });
 }
 
-/** Comodidades que dá para exigir (detectadas no texto do anúncio). */
-export const AMENITY_FILTERS: { id: string; label: string; short: string }[] = [
-  { id: "armario_cozinha", label: "Armário na cozinha", short: "Armário cozinha" },
-  { id: "armario_quarto", label: "Guarda-roupa no quarto", short: "Guarda-roupa" },
-  { id: "pia", label: "Pia / bancada", short: "Pia" },
-];
+/** Amenities the user can require (detected in the listing text). */
+export const FILTERABLE_AMENITIES: AmenityId[] = ["kitchen_cabinets", "wardrobe", "sink"];
 
-export const AMENITY_LABEL: Record<string, string> = {
-  ...Object.fromEntries(AMENITY_FILTERS.map((a) => [a.id, a.label])),
-  mobiliado: "Mobiliado",
-};
+/** Localized names of an amenity (full and short). */
+export const amenityLabel = (id: AmenityId) => t.listings.amenities[id];

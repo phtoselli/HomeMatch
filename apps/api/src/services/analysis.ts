@@ -1,14 +1,17 @@
 import type { AnalysisResult, AnalyzeRequest, Emit, Poi } from "@homematch/contracts";
-import { LEVEL_LABEL, inBBox, inMultiPolygon, padBBox, rankRegions, scoreGrid } from "@homematch/domain";
+import { inBBox, inMultiPolygon, padBBox, rankRegions, scoreGrid } from "@homematch/domain";
+import { t } from "@homematch/i18n";
 import { featureById, fetchFeaturePois, fetchPlaceNames } from "@homematch/sources";
 import { intercityNetwork, localNetwork, osmArea } from "./commute.js";
 
-/** Quantas das melhores regiões levam as linhas usadas ao mapa (as mesmas que a busca de imóveis percorre). */
+/** How many of the best regions bring their lines to the map (the same ones the listing search goes through). */
 const MAP_REGIONS = 15;
 
+const msg = t.analysis;
+
 /**
- * Análise das regiões: baixa linhas, lugares e bairros (fontes) e cruza tudo na grade (domínio).
- * Os avisos vão saindo por `emit` enquanto trabalha.
+ * Region analysis: downloads lines, places and neighborhoods (sources) and crosses everything on the grid (domain).
+ * Notices go out through `emit` while it works.
  */
 export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<AnalysisResult> {
   const warnings: string[] = [];
@@ -16,19 +19,19 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
     warnings.push(m);
     emit({ type: "warning", message: m });
   };
-  // Sem tempo máximo, a cidade inteira entra: cada pedaço ganha um nível pelas prioridades da pessoa.
+  // No maximum commute, so the whole city is analyzed: each cell gets a level from the user's priorities.
   const bbox = req.city.bbox;
 
-  // Pelo limite do município: as bboxes de cidades vizinhas se sobrepõem.
+  // By the municipal boundary: neighboring cities' bboxes overlap.
   const workInCity = req.city.boundary?.length
     ? inMultiPolygon(req.work, req.city.boundary)
     : inBBox(req.work, req.city.bbox);
-  // Lugares e bairros saem junto com as linhas (o Overpass é lento: melhor esperar uma vez só).
-  // Cada consulta que falha (Overpass lotado) vira aviso e a análise segue com o resto, em vez de dar erro.
+  // Places and neighborhoods are fetched alongside the lines (Overpass is slow: better to wait only once).
+  // A failing query (Overpass at capacity) becomes a warning and the analysis goes on with the rest.
   const failedPois: string[] = [];
   const poisPromise = Promise.all(
     req.features.map(async (f) => {
-      // Margem de 2× o raio: o lugar logo além da divisa também conta (e a consulta é a mesma de antes, no cache).
+      // 2× radius margin: a place just across the city line counts too (and the query stays cache-compatible).
       const list = await fetchFeaturePois(f.id, osmArea(req.city.bbox, f.radius * 2)).catch(() => {
         failedPois.push(f.id);
         return [] as Poi[];
@@ -37,7 +40,7 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
     }),
   );
   const placesPromise = fetchPlaceNames(osmArea(req.city.bbox, 2000));
-  // Evita "unhandled rejection" enquanto as linhas ainda estão sendo lidas; o erro é tratado lá embaixo.
+  // Avoid an "unhandled rejection" while lines are still loading; the error is handled below.
   placesPromise.catch(() => {});
 
   const net = workInCity ? await localNetwork(req, emit, warn, true) : await intercityNetwork(req, emit, warn);
@@ -45,24 +48,20 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
 
   if (req.features.length) {
     const labels = req.features.map((f) => featureById(f.id)?.label.toLowerCase() ?? f.id);
-    emit({ type: "progress", message: `Mapeando ${labels.join(", ")} e os bairros da cidade…` });
+    emit({ type: "progress", message: msg.mappingPlaces(labels) });
   }
   const pois: Record<string, Poi[]> = Object.fromEntries(await poisPromise);
   for (const f of req.features) {
     const label = featureById(f.id)?.label ?? f.id;
-    if (failedPois.includes(f.id))
-      warn(
-        `O OpenStreetMap está lotado e não deu para mapear ${label.toLowerCase()} agora; ele ficou fora do nível das ` +
-          `regiões nesta busca. Tente de novo em alguns minutos.`,
-      );
-    else if (!pois[f.id]!.length) warn(`Nenhum(a) ${label} encontrado(a) no OpenStreetMap nessa área.`);
+    if (failedPois.includes(f.id)) warn(msg.placesUnavailable(label));
+    else if (!pois[f.id]!.length) warn(msg.noPlaces(label));
   }
   const places = await placesPromise.catch(() => {
-    warn("O OpenStreetMap está lotado e não deu para buscar os nomes dos bairros agora.");
+    warn(msg.neighborhoodsUnavailable);
     return [];
   });
 
-  emit({ type: "progress", message: "Cruzando trajeto e características em cada pedaço da cidade…" });
+  emit({ type: "progress", message: msg.scoring });
   const grid = scoreGrid({
     bbox,
     boundary: req.city.boundary,
@@ -80,25 +79,18 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
     hubs: net.hubs,
   });
   const regions = rankRegions(grid.cells, req.cellSizeM);
-  // Linhas usadas pelas melhores regiões (as que entram na busca de imóveis); a cidade inteira pesaria MBs.
+  // Lines used by the best regions (the ones in the listing search); the whole city would weigh megabytes.
   const topNames = new Set(regions.slice(0, MAP_REGIONS).map((r) => r.name));
   const cellRouteIds = new Set(grid.cells.filter((c) => topNames.has(c.region) && c.routeId).map((c) => c.routeId!));
-  const { excelente, boa, ok } = grid.levels;
-  if (!grid.cells.length) {
-    warn("Nenhuma região atinge o que você pediu. Aumente as distâncias dos lugares ou mude as prioridades.");
-  } else if (!excelente && !boa) {
-    warn(
-      `Nenhuma região atinge a sua prioridade principal; mostrando as que atingem as outras (${LEVEL_LABEL.ok.toLowerCase()}).`,
-    );
-  }
+  const { excellent, good, ok } = grid.levels;
+  if (!grid.cells.length) warn(msg.noRegions);
+  else if (!excellent && !good) warn(msg.mainNotMet);
   emit({
     type: "progress",
-    message:
-      `Áreas por nível: ${excelente} excelentes, ${boa} boas e ${ok} ok. ` +
-      `Tempo até o trabalho: o melhor é ${grid.commuteBestMin} min; até ${grid.commuteRefMin} min conta como bem servido.`,
+    message: msg.levelsSummary(excellent, good, ok, grid.commuteBestMin, grid.commuteRefMin),
   });
 
-  // Envia ao mapa só os POIs dentro da área analisada (e as linhas usadas).
+  // Only send the places inside the analyzed area to the map (and the lines used).
   const box = padBBox(bbox, 1000);
   const trimmed = Object.fromEntries(
     Object.entries(pois).map(([k, v]) => [
@@ -110,8 +102,8 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
   return {
     work: req.work,
     cellSizeM: req.cellSizeM,
-    // Só as linhas que chegam ao trabalho e as que as regiões encontradas usam (a rede inteira pesa MBs), mais os
-    // trechos intermunicipais estimados até os terminais que as regiões usam.
+    // Only the lines that reach work and those the found regions use (the whole network weighs megabytes), plus the
+    // estimated intercity legs to the terminals the regions use.
     routes: [
       ...routes
         .filter((r) => net.nearWorkIds.has(r.id) || net.intercityIds.has(r.id) || cellRouteIds.has(r.id))

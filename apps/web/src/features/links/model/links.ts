@@ -5,7 +5,7 @@ import { persistFields, readSaved } from "@/shared/lib/persist";
 type Update = LinkResult[] | ((prev: LinkResult[]) => LinkResult[]);
 
 interface LinksState {
-  /** Links de anúncios colados pela pessoa (numerados no mapa). */
+  /** Listing links pasted by the user (numbered on the map). */
   results: LinkResult[];
   setResults: (v: Update) => void;
 }

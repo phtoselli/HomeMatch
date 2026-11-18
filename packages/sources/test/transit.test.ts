@@ -4,7 +4,7 @@ import type { OsmElement } from "../src/osm/overpass.js";
 import { boardingStops, commuteFrom } from "@homematch/domain";
 import { parseRoutes } from "../src/transit.js";
 
-// Linha reta norte → sul, paradas a cada ~1,1 km; o trabalho fica na última parada.
+// Straight north → south line, stops every ~1.1 km; work is at the last stop.
 const work = { lat: -23.6, lng: -46.65 };
 const stopsLat = [-23.55, -23.56, -23.57, -23.58, -23.59, -23.6];
 
@@ -21,7 +21,7 @@ function busRoute(ptv2: boolean): OsmElement[] {
       ...(ptv2 ? { "public_transport:version": "2" } : {}),
     },
     members: [
-      { type: "way", ref: 999, role: "" }, // trilho/rua: ignorado
+      { type: "way", ref: 999, role: "" }, // track/street: ignored
       ...nodes.map((n) => ({ type: "node" as const, ref: n.id, role: "stop" })),
     ],
   };
@@ -29,7 +29,7 @@ function busRoute(ptv2: boolean): OsmElement[] {
 }
 
 describe("transit", () => {
-  it("parseRoutes ordena as paradas e ignora membros sem coordenada", () => {
+  it("parseRoutes orders the stops and ignores members without coordinates", () => {
     const [r] = parseRoutes(busRoute(true));
     expect(r!.ref).toBe("875A");
     expect(r!.mode).toBe("bus");
@@ -37,36 +37,36 @@ describe("transit", () => {
     expect(r!.path[0]).toEqual([-23.55, -46.65]);
   });
 
-  it("boardingStops: embarcar mais longe custa mais; PTv2 respeita o sentido", () => {
+  it("boardingStops: boarding farther away costs more; PTv2 respects the direction", () => {
     const stops = boardingStops(parseRoutes(busRoute(true)), work);
-    // a última parada (no trabalho) não é ponto de embarque útil
+    // the last stop (at work) is not a useful boarding point
     expect(stops.find((s) => s.lat === -23.6)).toBeUndefined();
     const first = stops.find((s) => s.lat === -23.55)!;
     const fourth = stops.find((s) => s.lat === -23.58)!;
     expect(first.valueMin).toBeGreaterThan(fourth.valueMin);
-    // ~5,5 km a 15 km/h ≈ 25 min + 8 de espera
+    // ~5.5 km at 15 km/h ≈ 25 min + 8 waiting
     expect(first.valueMin).toBeGreaterThan(28);
     expect(first.valueMin).toBeLessThan(40);
   });
 
-  it("linha sem sentido (PTv1) é considerada nos dois sentidos", () => {
+  it("a line without direction (PTv1) counts in both directions", () => {
     const workNorth = { lat: -23.55, lng: -46.65 };
     expect(boardingStops(parseRoutes(busRoute(true)), workNorth)).toHaveLength(0);
     expect(boardingStops(parseRoutes(busRoute(false)), workNorth).length).toBeGreaterThan(0);
   });
 
-  it("commuteFrom escolhe a linha quando compensa e a caminhada quando está perto", () => {
+  it("commuteFrom picks the line when worth it and walking when close", () => {
     const idx = new PointIndex(boardingStops(parseRoutes(busRoute(true)), work), 1000);
     const far = commuteFrom({ lat: -23.551, lng: -46.651 }, work, idx, 800);
     expect(far.via).toBe("Ônibus 875A");
     expect(far.minutes).toBeLessThan(45);
     const near = commuteFrom({ lat: -23.598, lng: -46.65 }, work, idx, 800);
-    expect(near.via).toBe("a pé");
+    expect(near.travel).toBe("walk");
   });
 });
 
-describe("baldeação e desembarque", () => {
-  // Linha A vai ao trabalho (norte → sul). Linha B corre de leste a oeste e cruza A em -23.57.
+describe("transfers and alighting", () => {
+  // Line A goes to work (north → south). Line B runs east to west and crosses A at -23.57.
   const lineA = {
     id: "A",
     ref: "A",
@@ -86,22 +86,22 @@ describe("baldeação e desembarque", () => {
     path: [-46.6, -46.61, -46.62, -46.63, -46.64, -46.6505].map((lng) => [-23.57, lng] as [number, number]),
   };
 
-  it("sem baldeação, a linha B (que não passa perto do trabalho) não conta", () => {
+  it("without transfers, line B (which does not pass near work) does not count", () => {
     const stops = boardingStops([lineA, lineB], work);
     expect(stops.some((s) => s.routeId === "B")).toBe(false);
   });
 
-  it("com baldeação, B leva até a A: tempo inclui as duas esperas", () => {
+  it("with transfers, B takes you to A: the time includes both waits", () => {
     const stops = boardingStops([lineA, lineB], work, undefined, { transfers: true });
     const b0 = stops.find((s) => s.routeId === "B" && s.lng === -46.6)!;
     expect(b0).toBeDefined();
     expect(b0.label).toBe("Ônibus B + Ônibus A");
     const a3 = stops.find((s) => s.routeId === "A" && s.lat === -23.57)!;
-    // 8 min de espera da B + viagem + 3 de folga + valor de embarcar na A ali
+    // 8 min waiting for B + ride + 3 of slack + value of boarding A there
     expect(b0.valueMin).toBeGreaterThan(a3.valueMin + 8 + 3);
   });
 
-  it("parada só de desembarque não vira ponto de embarque, mas ainda dá para descer nela", () => {
+  it("an alight-only stop is not a boarding point, but you can still get off there", () => {
     const alightOnly = stopsLat.map((_, i) => i === 1);
     const stops = boardingStops([{ ...lineA, alightOnly }], work);
     expect(stops.find((s) => s.lat === -23.56)).toBeUndefined();

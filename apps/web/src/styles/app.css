@@ -1,4 +1,4 @@
-/* Estilos das telas (migrando aos poucos para CSS Modules junto de cada componente; peças comuns em shared/ui). */
+/* Screen styles (moving gradually to CSS Modules next to each component; shared pieces live in shared/ui). */
 
 * {
   box-sizing: border-box;
@@ -87,7 +87,7 @@ svg {
   font-size: 13px;
 }
 
-/* ---------- Botões e controles ---------- */
+/* ---------- Buttons and controls ---------- */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -464,7 +464,7 @@ input[type="checkbox"] {
   margin: 0 2px;
 }
 
-/* ---------- Painel de resultados ---------- */
+/* ---------- Results panel ---------- */
 .results {
   display: flex;
   flex-direction: column;
@@ -810,7 +810,7 @@ input[type="checkbox"] {
   font-size: 15px;
 }
 
-/* ---------- Painel de links (aba "Links e linhas") ---------- */
+/* ---------- Links panel ("Links and lines" tab) ---------- */
 .links-panel {
   padding: 16px;
   display: flex;
@@ -1003,7 +1003,7 @@ input[type="checkbox"] {
   font-size: 13.5px;
 }
 
-/* ---------- Busca de lugar ---------- */
+/* ---------- Place search ---------- */
 .searchbox {
   position: relative;
   display: flex;
@@ -1045,7 +1045,7 @@ input[type="checkbox"] {
   font-size: 12px;
 }
 
-/* ---------- Configuração (4 passos) ---------- */
+/* ---------- Setup (4 steps) ---------- */
 .setup-overlay {
   position: absolute;
   inset: 0;
@@ -1729,7 +1729,7 @@ details.more > .grid3 + .field {
   color: var(--accent);
 }
 
-/* ---------- Detalhe do imóvel ---------- */
+/* ---------- Listing detail ---------- */
 .detail-backdrop {
   position: fixed;
   inset: 0;
@@ -2147,7 +2147,7 @@ details.more > .grid3 + .field {
   }
 }
 
-/* Sem foto: placeholder baixo, para não empurrar o conteúdo. */
+/* No photo: short placeholder, so it does not push the content down. */
 .fchip {
   flex: none;
 }
@@ -2186,7 +2186,7 @@ details.more > .grid3 + .field {
     display: none;
   }
 }
-/* No celular a lista fica logo abaixo do mapa: o pin destaca o card, e o card abre o detalhe. */
+/* On phones the list sits right below the map: the pin highlights the card, and the card opens the detail. */
 .preview-body {
   min-width: 0;
 }
@@ -2195,7 +2195,7 @@ details.more > .grid3 + .field {
     display: none;
   }
 }
-/* Textos de ajuda com trechos de código: fluem como parágrafo. */
+/* Help texts with code snippets: flow like a paragraph. */
 .step .hint {
   display: block;
 }
@@ -2208,7 +2208,7 @@ details.more > .grid3 + .field {
   color: var(--warn-ink);
 }
 
-/* ---------- Busca simples: uma tela, e resultados em "atende a tudo" / "quase lá" ---------- */
+/* ---------- Simple search: one screen, results split into "meets everything" / "almost there" ---------- */
 .setup.quick {
   max-width: 880px;
 }
@@ -2360,7 +2360,7 @@ details.more > .grid3 + .field {
   background: var(--warn-soft);
   color: var(--warn-ink);
 }
-/* Com a busca ampliada podem ser 10+ regiões: uma linha só, rolando para o lado. */
+/* With the widened search there can be 10+ regions: a single row, scrolling sideways. */
 .results-head .pills {
   flex-wrap: nowrap;
   overflow-x: auto;
@@ -2375,7 +2375,7 @@ details.more > .grid3 + .field {
   white-space: nowrap;
 }
 
-/* ---------- Fontes: portais e imobiliárias da cidade ---------- */
+/* ---------- Sources: portals and the city's agencies ---------- */
 .sources {
   display: flex;
   flex-direction: column;
@@ -2444,7 +2444,7 @@ details.more > .grid3 + .field {
   color: var(--muted);
 }
 
-/* ---------- Configurações do mapa ---------- */
+/* ---------- Map settings ---------- */
 .map-settings {
   width: 300px;
   max-width: calc(100vw - 32px);
@@ -2554,7 +2554,7 @@ details.more > .grid3 + .field {
   }
 }
 
-/* ---------- Linhas de ônibus: lista, popover e horários ---------- */
+/* ---------- Bus lines: list, popover and timetable ---------- */
 .line-badge {
   display: inline-grid;
   place-items: center;
@@ -2832,7 +2832,7 @@ input.ms-search {
   color: #fff;
 }
 
-/* ---------- Prioridades (nível das regiões) ---------- */
+/* ---------- Priorities (region levels) ---------- */
 .prio-list {
   display: flex;
   flex-direction: column;

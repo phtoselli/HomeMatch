@@ -14,13 +14,13 @@ export const bboxSchema = z.object({
 });
 export type BBox = z.infer<typeof bboxSchema>;
 
-/** Anel de polígono em [lng, lat] (ordem GeoJSON). Um polígono é [externo, ...buracos]. */
+/** Polygon ring as [lng, lat] (GeoJSON order). A polygon is [outer, ...holes]. */
 export const ringSchema = z.array(z.tuple([z.number(), z.number()]));
 export type Ring = z.infer<typeof ringSchema>;
 
 export const polygonSchema = z.array(ringSchema);
 export type Polygon = z.infer<typeof polygonSchema>;
 
-/** Ponto como [lat, lng] (ordem do Leaflet), usado nos traçados. */
+/** Point as [lat, lng] (Leaflet order), used for route geometry. */
 export const latLngTupleSchema = z.tuple([z.number(), z.number()]);
 export type LatLngTuple = z.infer<typeof latLngTupleSchema>;

@@ -2,22 +2,22 @@ import { create } from "zustand";
 import type { BBox } from "@homematch/contracts";
 
 interface MapViewState {
-  /** Pedido para enquadrar o mapa (key muda a cada pedido, mesmo para o mesmo retângulo). */
+  /** Request to fit the map (key changes on every request, even for the same rectangle). */
   fit: { bbox: BBox; key: number } | null;
-  /** Área visível agora (para buscar linhas "aqui"). */
+  /** Currently visible area (to search lines "here"). */
   viewBBox: BBox | null;
-  /** Imóvel selecionado (cartão no mapa), aberto em detalhe e o que o mapa deve centralizar. */
+  /** Selected listing (map card), the one open in detail and the one the map should center on. */
   selectedId: string | null;
   detailId: string | null;
   focusId: string | null;
-  /** Esperando um clique no mapa para marcar o trabalho. */
+  /** Waiting for a click on the map to mark work. */
   pickingWork: boolean;
   settingsOpen: boolean;
 
   fitTo: (bbox: BBox) => void;
   setViewBBox: (b: BBox | null) => void;
   select: (id: string | null) => void;
-  /** Seleciona pela lista e centraliza o mapa no imóvel. */
+  /** Selects from the list and centers the map on the listing. */
   selectAndFocus: (id: string) => void;
   openDetail: (id: string | null) => void;
   setPickingWork: (on: boolean) => void;
@@ -37,7 +37,7 @@ export const useMapView = create<MapViewState>()((set) => ({
   setViewBBox: (viewBBox) => set({ viewBBox }),
   select: (selectedId) => set({ selectedId }),
   selectAndFocus: (id) => {
-    // Zera e marca de novo: clicar duas vezes no mesmo imóvel volta a centralizar.
+    // Reset and set again: clicking the same listing twice re-centers it.
     set({ selectedId: id, focusId: null });
     setTimeout(() => set({ focusId: id }), 0);
   },

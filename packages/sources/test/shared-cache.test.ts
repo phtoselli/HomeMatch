@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { SharedCache } from "../src/http.js";
 
-// Cache local numa pasta temporária: cada teste começa "frio" no disco, como uma instância nova na Vercel.
+// Local cache in a temp folder: each test starts "cold" on disk, like a new Vercel instance.
 beforeAll(() => {
   process.env.DATA_DIR = mkdtempSync(join(tmpdir(), "homematch-cache-"));
 });
@@ -18,14 +18,14 @@ const memory = (): SharedCache & { store: Map<string, unknown> } => {
   };
 };
 
-describe("cache em dois níveis", () => {
+describe("two-level cache", () => {
   afterEach(async () => {
     const { useSharedCache } = await import("../src/http.js");
     useSharedCache(undefined);
     vi.resetModules();
   });
 
-  it("dado de referência vai para o cache compartilhado (compactado) e volta numa instância nova", async () => {
+  it("reference data goes to the shared cache (compressed) and comes back on a new instance", async () => {
     const remote = memory();
     let http = await import("../src/http.js");
     http.useSharedCache(remote);
@@ -34,7 +34,7 @@ describe("cache em dois níveis", () => {
     expect(remote.store.size).toBe(1);
     expect(typeof [...remote.store.values()][0]).toBe("string");
 
-    // "Outra instância": disco vazio (outra pasta), mesmo cache compartilhado.
+    // "Another instance": empty disk (another folder), same shared cache.
     process.env.DATA_DIR = mkdtempSync(join(tmpdir(), "homematch-cache-"));
     vi.resetModules();
     http = await import("../src/http.js");
@@ -44,7 +44,7 @@ describe("cache em dois níveis", () => {
     expect(again).not.toHaveBeenCalled();
   });
 
-  it("anúncio (validade curta) fica só no disco", async () => {
+  it("listings (short lifetime) stay on disk only", async () => {
     const remote = memory();
     const http = await import("../src/http.js");
     http.useSharedCache(remote);
@@ -52,7 +52,7 @@ describe("cache em dois níveis", () => {
     expect(remote.store.size).toBe(0);
   });
 
-  it("cache compartilhado fora do ar não quebra a busca", async () => {
+  it("a shared cache outage does not break the search", async () => {
     const http = await import("../src/http.js");
     http.useSharedCache({
       get: async () => {
@@ -66,13 +66,13 @@ describe("cache em dois níveis", () => {
   });
 });
 
-describe("fonte fora do ar", () => {
-  it("devolve o valor vencido do cache em vez de derrubar a busca; sem nada guardado, o erro sobe", async () => {
+describe("source outage", () => {
+  it("returns the stale cached value instead of failing the search; with nothing stored, the error propagates", async () => {
     process.env.DATA_DIR = mkdtempSync(join(tmpdir(), "homematch-cache-"));
     vi.resetModules();
     const http = await import("../src/http.js");
     await http.cached("overpass", "stale-q", 1, async () => ({ v: "antigo" }));
-    await new Promise((r) => setTimeout(r, 5)); // passou da validade (1 ms)
+    await new Promise((r) => setTimeout(r, 5)); // past its lifetime (1 ms)
     const down = async () => {
       throw new Error("Overpass indisponível");
     };

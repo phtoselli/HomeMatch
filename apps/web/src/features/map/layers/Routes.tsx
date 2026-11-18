@@ -5,7 +5,7 @@ import { useLayer } from "../hooks/useLayer";
 import { hoverable } from "../lib/leaflet";
 import type { LineHover } from "../types";
 
-/** Linhas que a análise usou para chegar ao trabalho. */
+/** Lines the analysis used to reach work. */
 export function Routes({
   analysis,
   hidden,
@@ -19,12 +19,12 @@ export function Routes({
 }) {
   useLayer(
     (g) => {
-      // Tolerância maior: linhas finas sobrepostas ficam fáceis de pegar com o mouse.
+      // Larger tolerance: thin overlapping lines become easy to hover.
       const renderer = L.canvas({ padding: 0.3, tolerance: 6 });
       for (const r of analysis?.routes ?? []) {
         if (hidden.includes(lineKey(r))) continue;
-        // Trecho estimado (intermunicipal sem linha mapeada): pontilhado grosso, para não parecer um itinerário real
-        // nem as ferrovias do mapa de fundo (tracejadas em cinza).
+        // Estimated leg (intercity without a mapped line): a thick dotted line, so it looks neither like a real route
+        // nor like the base map's railways (dashed gray).
         const weight = r.estimated ? 5 : r.mode === "bus" || r.mode === "trolleybus" ? 2.5 : 4.5;
         const dots: L.PolylineOptions = r.estimated ? { dashArray: "0.1 10", lineCap: "round", opacity: 0.9 } : {};
         hoverable(

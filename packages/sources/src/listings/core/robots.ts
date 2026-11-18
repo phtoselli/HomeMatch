@@ -1,15 +1,15 @@
 import { BROWSER_UA, DAY, HOUR, cacheGet, cacheSet, httpFetch } from "../../http.js";
 
 /**
- * robots.txt: o que o site pede para robôs não lerem. Toda extensão passa por aqui antes de baixar
- * uma página; se o site não permite, a fonte aparece como "robots" e não é lida.
+ * robots.txt: what the site asks robots not to read. Every extension goes through here before downloading a page;
+ * if the site does not allow it, the source shows up as "robots" and is not read.
  */
 export interface RobotsRule {
   allow: boolean;
   pattern: string;
 }
 
-/** Parse puro: regras do grupo "User-agent: *" (o app não tem grupo próprio nos sites). */
+/** Pure parsing: rules of the "User-agent: *" group (the app has no group of its own on sites). */
 export function parseRobots(txt: string): RobotsRule[] {
   const rules: RobotsRule[] = [];
   let agents: string[] = [];
@@ -21,7 +21,7 @@ export function parseRobots(txt: string): RobotsRule[] {
     const key = m[1]!.toLowerCase();
     const value = m[2]!.trim();
     if (key === "user-agent") {
-      if (inRules) agents = []; // um "User-agent" depois de regras começa outro grupo
+      if (inRules) agents = []; // a "User-agent" after rules starts another group
       inRules = false;
       agents.push(value.toLowerCase());
       continue;
@@ -44,7 +44,7 @@ function toRegex(pattern: string): RegExp {
   return new RegExp(`^${body}${anchored ? "$" : ""}`);
 }
 
-/** O caminho (com a query) pode ser lido? Vale a regra mais específica (mais longa); empate = Allow. */
+/** May the path (with its query) be read? The most specific (longest) rule wins; tie = Allow. */
 export function robotsAllows(rules: RobotsRule[], pathAndQuery: string): boolean {
   let best: RobotsRule | null = null;
   for (const r of rules) {
@@ -55,8 +55,8 @@ export function robotsAllows(rules: RobotsRule[], pathAndQuery: string): boolean
   return best ? best.allow : true;
 }
 
-/** Busca (com cache de 1 dia) as regras do host. Sem robots.txt (4xx) = tudo liberado. */
-async function rulesFor(origin: string): Promise<RobotsRule[] | "erro"> {
+/** Fetches the host's rules (cached for 1 day). No robots.txt (4xx) = everything allowed. */
+async function rulesFor(origin: string): Promise<RobotsRule[] | "error"> {
   const hit = await cacheGet<RobotsRule[]>("robots", origin, DAY);
   if (hit) return hit;
   let rules: RobotsRule[];
@@ -68,28 +68,28 @@ async function rulesFor(origin: string): Promise<RobotsRule[] | "erro"> {
     });
     if (res.status >= 400 && res.status < 500) rules = [];
     else if (!res.ok)
-      return "erro"; // erro passageiro: não vai para o cache
+      return "error"; // temporary error: not cached
     else rules = parseRobots(await res.text());
   } catch {
-    return "erro";
+    return "error";
   }
   await cacheSet("robots", origin, rules);
   return rules;
 }
 
-const memo = new Map<string, { at: number; rules: RobotsRule[] | "erro" }>();
+const memo = new Map<string, { at: number; rules: RobotsRule[] | "error" }>();
 
-/** "allow" / "deny" pelo robots.txt; "erro" quando nem o robots.txt responde (site fora do ar). */
-export async function robotsStatus(url: string): Promise<"allow" | "deny" | "erro"> {
+/** "allow" / "deny" per robots.txt; "error" when not even robots.txt answers (site down). */
+export async function robotsStatus(url: string): Promise<"allow" | "deny" | "error"> {
   const u = new URL(url);
   let hit = memo.get(u.origin);
   if (!hit || Date.now() - hit.at > HOUR) {
     hit = { at: Date.now(), rules: await rulesFor(u.origin) };
-    if (hit.rules !== "erro") memo.set(u.origin, hit);
+    if (hit.rules !== "error") memo.set(u.origin, hit);
   }
-  if (hit.rules === "erro") return "erro";
+  if (hit.rules === "error") return "error";
   return robotsAllows(hit.rules, u.pathname + u.search) ? "allow" : "deny";
 }
 
-/** Na dúvida (robots.txt fora do ar), não lê o site agora. */
+/** When in doubt (robots.txt down), do not read the site now. */
 export const allowedByRobots = async (url: string) => (await robotsStatus(url)) === "allow";

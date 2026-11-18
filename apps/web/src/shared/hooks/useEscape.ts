@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-/** Fecha com Esc (modais, painéis). */
+/** Closes on Esc (modals, panels). */
 export function useEscape(onEscape: () => void, active = true) {
   useEffect(() => {
     if (!active) return;

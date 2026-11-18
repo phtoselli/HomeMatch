@@ -1,31 +1,32 @@
 import { z } from "zod";
+import { t } from "@homematch/i18n";
 import { latLngTupleSchema } from "./geo.js";
 import { TRANSIT_MODES } from "./constants.js";
 
 export const transitModeSchema = z.enum(TRANSIT_MODES);
 
 /**
- * Papel da linha na análise: passa perto do trabalho, liga as duas cidades (intermunicipal), trecho estimado
- * (intermunicipal sem linha mapeada) ou só leva até uma dessas (baldeação).
+ * Role of a line in the analysis: stops near work, connects both cities (intercity), estimated leg (intercity
+ * without a mapped line) or only feeds one of those (transfer).
  */
 export const ROUTE_KINDS = ["nearWork", "intercity", "estimated", "feeder"] as const;
 export const routeKindSchema = z.enum(ROUTE_KINDS);
 export type RouteKind = z.infer<typeof routeKindSchema>;
 
-/** Linha que a análise usa para chegar ao trabalho. */
+/** A line the analysis uses to reach work. */
 export const transitRouteSchema = z.object({
-  /** Id da relação OSM ou "<operador>:<linha>:<sentido>". */
+  /** OSM relation id or "<operator>:<line>:<direction>". */
   id: z.string(),
   ref: z.string().optional(),
   name: z.string(),
   mode: transitModeSchema,
   color: z.string(),
   operator: z.string().optional(),
-  /** Paradas em ordem, [lat, lng]. Usado no cálculo e, sem `shape`, para desenhar a linha. */
+  /** Stops in order, [lat, lng]. Used for the computation and, without `shape`, to draw the line. */
   path: z.array(latLngTupleSchema),
-  /** Traçado pelas ruas (quando a fonte tem), só para desenhar. */
+  /** Street geometry (when the source has it), for drawing only. */
   shape: z.array(z.array(latLngTupleSchema)).optional(),
-  /** Trecho estimado (intermunicipal sem linha mapeada): só liga a cidade ao terminal; o mapa desenha pontilhado. */
+  /** Estimated leg (intercity without a mapped line): only links the city to the terminal; drawn dotted. */
   estimated: z.boolean().optional(),
   kind: routeKindSchema.optional(),
 });
@@ -34,9 +35,9 @@ export type TransitRoute = z.infer<typeof transitRouteSchema>;
 export const busStopSchema = z.object({ lat: z.number(), lng: z.number(), name: z.string().optional() });
 export type BusStop = z.infer<typeof busStopSchema>;
 
-/** Uma linha de ônibus/metrô (um sentido) com o traçado exato e as paradas. */
+/** A bus/subway line (one direction) with its exact geometry and stops. */
 export const busLineSchema = z.object({
-  /** Relação OSM ("123456") ou "<operador>:<linha>:<sentido>" (ex.: "emdec:353:1"). */
+  /** OSM relation ("123456") or "<operator>:<line>:<direction>" (e.g. "emdec:353:1"). */
   id: z.string(),
   ref: z.string().optional(),
   name: z.string(),
@@ -49,16 +50,16 @@ export const busLineSchema = z.object({
   /** [lat, lng] */
   segments: z.array(z.array(latLngTupleSchema)),
   stops: z.array(busStopSchema),
-  /** De onde veio: "osm" ou o id do operador (ex.: "emdec"). */
+  /** Where it came from: "osm" or the operator id (e.g. "emdec"). */
   source: z.string().optional(),
-  /** Sentido da linha no site do operador (1 ou 2). */
+  /** Line direction on the operator's website (1 or 2). */
   direction: z.number().optional(),
-  /** Distância da parada mais próxima do trabalho (busca "linhas perto do trabalho"). */
+  /** Distance from work to the closest stop ("lines near work" search). */
   nearWorkM: z.number().optional(),
 });
 export type BusLine = z.infer<typeof busLineSchema>;
 
-/** Grade de horários de partida de uma linha (por sentido e tipo de dia). */
+/** Departure timetable of a line (per direction and day type). */
 export const lineTimetableSchema = z.object({
   ref: z.string(),
   name: z.string().optional(),
@@ -66,31 +67,31 @@ export const lineTimetableSchema = z.object({
   directions: z.array(
     z.object({
       direction: z.number(),
-      /** Ponto de partida e letreiro (destino). */
+      /** Starting point and headsign (destination). */
       from: z.string().optional(),
       to: z.string().optional(),
-      /** "Dias úteis", "Sábados", "Domingos/Feriados" → ["04:51", "05:12", …] (com marcas como "R" quando houver). */
+      /** Day label as published by the operator ("Dias úteis"…) → ["04:51", "05:12", …] (with marks like "R"). */
       days: z.array(z.object({ label: z.string(), times: z.array(z.string()) })),
     }),
   ),
-  /** Observação do operador sobre a linha. */
+  /** Operator note about the line. */
   note: z.string().optional(),
-  /** Quando o operador atualizou a grade ("12/11/2026, às 02h27"). */
+  /** When the operator last updated the timetable, as published. */
   updated: z.string().optional(),
-  /** Página oficial da linha. */
+  /** Official page of the line. */
   source: z.string().optional(),
 });
 export type LineTimetable = z.infer<typeof lineTimetableSchema>;
 
-/** Id de grade de horários: "<operador>:<linha>" ou "<operador>:<linha>:<sentido>". */
-export const timetableIdSchema = z.string().regex(/^[a-z]+:[\w.-]+(:\d+)?$/i, "id de linha inválido");
+/** Timetable id: "<operator>:<line>" or "<operator>:<line>:<direction>". */
+export const timetableIdSchema = z.string().regex(/^[a-z]+:[\w.-]+(:\d+)?$/i, t.api.invalidLineId);
 
-/** Empresa/órgão que publica as linhas de ônibus de uma cidade. */
+/** Company or agency that publishes a city's bus lines. */
 export const transitOperatorInfoSchema = z.object({
   id: z.string(),
   name: z.string(),
   site: z.string(),
-  /** O que o HomeMatch lê de lá. */
+  /** What HomeMatch reads from it. */
   provides: z.string(),
 });
 export type TransitOperatorInfo = z.infer<typeof transitOperatorInfoSchema>;

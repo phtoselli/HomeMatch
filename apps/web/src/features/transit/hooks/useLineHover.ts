@@ -9,8 +9,8 @@ export interface HoverState {
 }
 
 /**
- * Popover da linha sob o mouse: fica aberto enquanto o mouse está na linha ou nele (pequena folga
- * para ir de um ao outro). Clique fixa; fixado, passar sobre outra linha não troca o popover.
+ * Popover of the hovered line: stays open while the mouse is on the line or on it (small delay to move from one to
+ * the other). A click pins it; when pinned, hovering another line does not replace the popover.
  */
 export function useLineHover() {
   const [hover, setHover] = useState<HoverState | null>(null);

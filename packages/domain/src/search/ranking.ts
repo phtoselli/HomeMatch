@@ -1,60 +1,59 @@
-import { PROPERTY_TYPE_LABEL } from "@homematch/contracts/constants";
 import type { Cell, Listing } from "@homematch/contracts";
+import { t } from "@homematch/i18n";
 import { meters, money } from "../format.js";
 import { priceOf, type Filters } from "./criteria.js";
-import { AMENITY_FILTERS, amenityRank, hasAmenity } from "./listing-filters.js";
+import { FILTERABLE_AMENITIES, amenityRank, hasAmenity } from "./listing-filters.js";
 
-export type MissKind = "price" | "rooms" | "type" | "commute" | "place" | "item";
-/** Uma coisa em que o imóvel não bate com o pedido, já em texto curto para o card. */
+export type MissKind = "price" | "rooms" | "type" | "region" | "place" | "item";
+/** Something in which the listing does not match the request, already as short card text. */
 export interface Miss {
   kind: MissKind;
   label: string;
 }
 
-/** O que a pessoa quer perto de casa (id, nome curto, raio em metros). */
+/** What the user wants near home (id, short name, radius in meters). */
 export interface NearWant {
   id: string;
   label: string;
   radius: number;
 }
 
-/** Tudo em que o imóvel não bate com o pedido. Vazio = atende a tudo. */
+/** Everything in which the listing does not match the request. Empty = matches everything. */
 export function missesOf(l: Listing, cell: Cell | undefined, f: Filters, near: NearWant[]): Miss[] {
+  const m = t.listings.misses;
   const out: Miss[] = [];
   const price = priceOf(l, f.basis);
-  if (f.priceMax && price > f.priceMax)
-    out.push({ kind: "price", label: `${money(price - f.priceMax)} acima do teto` });
+  if (f.priceMax && price > f.priceMax) out.push({ kind: "price", label: m.overCap(money(price - f.priceMax)) });
   if (f.minBedrooms && (l.bedrooms ?? 0) < f.minBedrooms) {
-    const n = l.bedrooms ?? 0;
-    out.push({ kind: "rooms", label: n ? `${n} ${n === 1 ? "quarto" : "quartos"}` : "Sem quarto separado" });
+    out.push({ kind: "rooms", label: m.bedrooms(l.bedrooms ?? 0) });
   }
   if (f.types.length && !f.types.includes(l.type))
-    out.push({ kind: "type", label: PROPERTY_TYPE_LABEL[l.type] ?? l.typeLabel });
-  if (!cell) out.push({ kind: "commute", label: "Fora das regiões recomendadas" });
+    out.push({ kind: "type", label: t.listings.propertyTypes[l.type] ?? l.typeLabel });
+  if (!cell) out.push({ kind: "region", label: m.outsideRegions });
   else {
     for (const w of near) {
       const d = cell.featureDist[w.id];
-      if (d == null) out.push({ kind: "place", label: `${w.label} longe` });
-      else if (d > w.radius) out.push({ kind: "place", label: `${w.label} a ${meters(d)}` });
+      if (d == null) out.push({ kind: "place", label: m.placeFar(w.label) });
+      else if (d > w.radius) out.push({ kind: "place", label: m.placeAt(w.label, meters(d)) });
     }
   }
-  for (const a of AMENITY_FILTERS) {
-    if (f.amenities?.includes(a.id) && hasAmenity(l, a.id) === false)
-      out.push({ kind: "item", label: `Sem ${a.short.toLowerCase()}` });
+  for (const id of FILTERABLE_AMENITIES) {
+    if (f.amenities?.includes(id) && hasAmenity(l, id) === false)
+      out.push({ kind: "item", label: m.without(t.listings.amenities[id].short) });
   }
   return out;
 }
 
 /**
- * O que pesa de verdade na decisão: preço, quartos e estar numa região recomendada. O tempo até o trabalho e o que
- * tem perto já entram no nível da região; tipo e itens são desejo.
+ * What really weighs in the decision: price, bedrooms and being in a recommended region. Commute and what is
+ * nearby are already part of the region level; type and items are wishes.
  */
-export const ESSENTIAL: MissKind[] = ["price", "rooms", "commute"];
+export const ESSENTIAL: MissKind[] = ["price", "rooms", "region"];
 
 /**
- * Grupo do imóvel na lista:
- * 0 = atende a tudo; 1 = o essencial bate, falta algo de perto ou do imóvel;
- * 2 = quase lá (uma coisa essencial passa um pouco); 3 = outras opções (duas ou mais).
+ * Group of a listing in the list:
+ * 0 = matches everything; 1 = essentials match, something nearby or in the property is missing;
+ * 2 = almost there (one essential is slightly off); 3 = other options (two or more).
  */
 export function tierOf(misses: Miss[]): number {
   if (!misses.length) return 0;
@@ -64,15 +63,15 @@ export function tierOf(misses: Miss[]): number {
 
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 
-/** Melhor tempo até o trabalho na cidade e o que ainda conta como bem servido (da análise). */
+/** Best commute in the city and what still counts as well served (from the analysis). */
 export interface CommuteRef {
   bestMin: number;
   refMin: number;
 }
 
 /**
- * Quanto o imóvel combina com a busca (0–100): preço contra o alvo, tempo até o trabalho (comparado com o melhor
- * da cidade), comodidades confirmadas no anúncio e a nota da região (as prioridades atingidas).
+ * How well the listing matches the search (0–100): price against the target, commute (compared with the city's
+ * best), amenities confirmed in the listing and the region score (priorities met).
  */
 export function matchScore(l: Listing, cell: Cell | undefined, f: Filters, ref: CommuteRef): number {
   const price = priceOf(l, f.basis);
@@ -90,20 +89,20 @@ export function matchScore(l: Listing, cell: Cell | undefined, f: Filters, ref: 
     : 1;
 
   const areaFit = cell ? clamp01(cell.score / 100) : 0.5;
-  // Quarto a menos ou outro tipo: entram na lista (busca larga), mas pesam na nota.
+  // One bedroom less or another type: they enter the list (wide search) but lower the score.
   const roomsFit = f.minBedrooms && (l.bedrooms ?? 0) < f.minBedrooms ? 0.8 : 1;
   const typeFit = f.types.length && !f.types.includes(l.type) ? 0.9 : 1;
   return Math.round(100 * (0.35 * priceFit + 0.3 * commuteFit + 0.2 * amenFit + 0.15 * areaFit) * roomsFit * typeFit);
 }
 
-/** Folga (%) mínima para o teto alcançar um preço. */
+/** Minimum slack (%) for the cap to reach a price. */
 export const slackToReach = (budget: number, price: number) => Math.max(0, Math.ceil((price / budget - 1) * 100));
 
 export interface Ranked {
   l: Listing;
   cell?: Cell;
   match: number;
-  /** O que não bate com o pedido (vazio = atende a tudo). */
+  /** What does not match the request (empty = matches everything). */
   misses: Miss[];
 }
 
@@ -118,8 +117,8 @@ export function sortRanked(list: Ranked[], f: Filters): Ranked[] {
         : f.sort === "price"
           ? priceOf(x.l, f.basis) || Infinity
           : -x.match;
-  // Quem atende a tudo vem antes, depois o "quase lá". Pela nota, as comodidades já entram no cálculo;
-  // nas outras ordens, quem confirma os itens vem antes.
+  // Full matches first, then "almost there". When sorting by match, amenities are already in the score;
+  // in the other orders, listings confirming the items come first.
   return [...list].sort(
     (a, b) => tierOf(a.misses) - tierOf(b.misses) || (f.sort === "match" ? 0 : rank(a) - rank(b)) || key(a) - key(b),
   );

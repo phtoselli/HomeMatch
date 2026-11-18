@@ -2,8 +2,8 @@ import type { FastifyReply } from "fastify";
 import type { StreamEvent } from "@homematch/contracts";
 
 /**
- * Resposta em NDJSON: uma linha JSON por evento (progresso, avisos, parciais) e, no fim, o resultado
- * ou o erro. O cliente lê enquanto chega, então a tela mostra o andamento de buscas que levam minutos.
+ * NDJSON response: one JSON line per event (progress, warnings, partial results) and, at the end, the result or the
+ * error. The client reads as it arrives, so the screen shows the progress of searches that take minutes.
  */
 export async function stream<T>(reply: FastifyReply, run: (emit: (ev: StreamEvent<T>) => void) => Promise<T>) {
   reply.hijack();

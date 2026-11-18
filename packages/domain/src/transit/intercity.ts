@@ -1,4 +1,5 @@
 import type { LatLng } from "@homematch/contracts";
+import { t } from "@homematch/i18n";
 import { PointIndex, distance } from "../geo.js";
 import {
   DEFAULT_TRANSIT,
@@ -11,28 +12,28 @@ import {
 } from "./model.js";
 
 /**
- * Trabalho em outra cidade sem linha intermunicipal mapeada: o ônibus intermunicipal é estimado até um terminal da
- * cidade do trabalho (onde ele costuma chegar) e dali vale o transporte municipal de verdade (operador oficial ou
- * OpenStreetMap) até o trabalho. Mais realista do que supor um ônibus que deixa na porta do trabalho.
+ * Work in another city with no mapped intercity line: the intercity bus is estimated up to a terminal in the work
+ * city (where such buses usually arrive), and from there the real municipal network (official operator or
+ * OpenStreetMap) takes over. More realistic than assuming a bus that drops you at the office door.
  */
 
-/** Terminal da cidade do trabalho com o melhor jeito de seguir dali até o trabalho. */
+/** A terminal in the work city, with the best way to continue from it to work. */
 export interface Hub extends LatLng {
   id: string;
   name: string;
-  /** Minutos do terminal até o trabalho (a pé ou pela melhor linha municipal). */
+  /** Minutes from the terminal to work (on foot or by the best municipal line). */
   toWorkMin: number;
-  /** Linha municipal usada (para desenhar no mapa) e o rótulo dela; sem linha, segue a pé. */
+  /** Municipal line used (drawn on the map) and its label; without one, the rest is on foot. */
   routeId?: string;
   label?: string;
 }
 
-/** Terminal que fica mais longe do trabalho do que isso (a pé ou de ônibus) não ajuda. */
+/** A terminal farther than this from work (on foot or by bus) does not help. */
 export const HUB_MAX_TO_WORK_MIN = 60;
 
 /**
- * Para cada terminal, o melhor jeito de chegar ao trabalho: a pé ou andando até um embarque (a até 400 m) de uma
- * linha que chega lá. `arrival` são os embarques da rede da cidade do trabalho (`boardingStops`).
+ * For each terminal, the best way to reach work: on foot or by walking to a boarding stop (up to 400 m away) of a
+ * line that gets there. `arrival` holds the boarding stops of the work city's network (`boardingStops`).
  */
 export function hubsToWork(
   stations: (LatLng & { name: string })[],
@@ -46,8 +47,8 @@ export function hubsToWork(
   stations.forEach((s, i) => {
     let best: Omit<Hub, keyof LatLng | "id" | "name"> = { toWorkMin: walk(distance(s, work)) };
     for (const { item, dist } of idx.within(s, TRANSFER.maxWalkM)) {
-      const t = walk(dist) + item.valueMin;
-      if (t < best.toWorkMin) best = { toWorkMin: t, routeId: item.routeId, label: item.label };
+      const minutes = walk(dist) + item.valueMin;
+      if (minutes < best.toWorkMin) best = { toWorkMin: minutes, routeId: item.routeId, label: item.label };
     }
     if (best.toWorkMin <= HUB_MAX_TO_WORK_MIN)
       hubs.push({ lat: s.lat, lng: s.lng, id: `hub-${i}`, name: s.name, ...best });
@@ -59,11 +60,9 @@ export interface HubCommute extends Commute {
   hubId: string;
 }
 
-export const HUB_LABEL = "intermunicipal (estimado)";
-
 /**
- * Casa → ponto de ônibus → intermunicipal estimado até o terminal → linha municipal (ou a pé) até o trabalho.
- * Escolhe o terminal que dá o menor tempo total. null sem ponto de ônibus perto de casa ou sem terminal.
+ * Home → bus stop → estimated intercity bus to the terminal → municipal line (or on foot) to work.
+ * Picks the terminal with the shortest total time. null without a bus stop near home or without terminals.
  */
 export function hubCommute(
   from: LatLng,
@@ -84,7 +83,8 @@ export function hubCommute(
     if (!best || minutes < best.minutes) {
       best = {
         minutes,
-        via: `${HUB_LABEL} até ${h.name}${h.label ? ` + ${h.label}` : ""}`,
+        travel: "estimated",
+        via: t.transit.viaTerminal(h.name, h.label),
         routeId: h.routeId,
         hubId: h.id,
       };

@@ -1,13 +1,13 @@
 import type { Listing } from "@homematch/contracts";
 import { priceOf, type Filters } from "./criteria.js";
 
-/** Por que a busca voltou vazia: o que existe logo acima do teto e em outros tipos. */
+/** Why the search came back empty: what exists just above the price cap and in other property types. */
 export interface Diagnosis {
   ceiling: number | null;
-  /** Mesmo tipo e quartos, até ~60% acima do teto: quantos e o mais barato. */
+  /** Same type and bedrooms, up to ~60% above the cap: how many and the cheapest. */
   sameCount: number;
   cheapestSame?: number;
-  /** Qualquer tipo e número de quartos, dentro do teto. */
+  /** Any type and number of bedrooms, within the cap. */
   others: number;
   othersCheapest?: number;
 }

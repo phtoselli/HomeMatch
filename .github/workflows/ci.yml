@@ -5,7 +5,7 @@ on:
     branches: [main]
   pull_request:
 
-# O token do GitHub Actions só lê o código (o CI não publica nada nem comenta em PRs).
+# The GitHub Actions token only reads the code (CI publishes nothing and does not comment on PRs).
 permissions:
   contents: read
 
@@ -24,15 +24,15 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Dependências sem vulnerabilidade conhecida (produção, nível alto)
+      - name: Dependencies without known vulnerabilities (production, high level)
         run: npm audit --omit=dev --audit-level=high
-      - name: Formatação
+      - name: Formatting
         run: npm run format:check
-      - name: Lint (inclui as regras de dependência entre pacotes)
+      - name: Lint (includes the architecture import rules)
         run: npm run lint
-      - name: Tipos
+      - name: Types
         run: npm run typecheck
-      - name: Testes
+      - name: Tests
         run: npm test
-      - name: Build do app
+      - name: App build
         run: npm run build

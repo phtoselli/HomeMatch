@@ -3,25 +3,26 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
+import { t } from "@homematch/i18n";
 import { PrivateNetworkError, assertPublicUrl, publicDispatcher } from "./net.js";
 
-/** Identificação honesta do app (política de uso do OSM/Nominatim pede um User-Agent próprio). */
-export const APP_UA = "HomeMatch/0.1 (ferramenta pessoal de busca de aluguel)";
+/** Honest app identification (the OSM/Nominatim usage policy asks for a dedicated User-Agent). */
+export const APP_UA = "HomeMatch/0.1 (rental search map; https://github.com/phtoselli/HomeMatch)";
 export const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
 
 /**
- * Pasta de dados (cache de conteúdo de terceiros, fora do git). Padrão: `data/` na raiz do repositório,
- * qualquer que seja a pasta de onde o app foi iniciado; em produção vem de DATA_DIR.
+ * Data folder (cache of third-party content, outside git). Default: `data/` at the repository root, whatever folder
+ * the app was started from; in production it comes from DATA_DIR.
  */
 export const DATA_DIR = process.env.DATA_DIR ?? fileURLToPath(new URL("../../../data", import.meta.url));
 const CACHE_DIR = join(DATA_DIR, "cache");
 
-// ---------- cache em arquivo ----------
+// ---------- file cache ----------
 
 function cachePath(ns: string, key: string): string {
   const h = createHash("sha1").update(key).digest("hex");
-  // O namespace vira pasta: sem ":" e outros caracteres que o Windows não aceita ("site:host" → "site_host").
+  // The namespace becomes a folder: no ":" or other characters Windows rejects ("site:host" → "site_host").
   return join(CACHE_DIR, ns.replace(/[^\w.-]/g, "_"), `${h}.json`);
 }
 
@@ -30,7 +31,7 @@ export async function cacheGet<T>(ns: string, key: string, ttlMs: number = Infin
     const raw = JSON.parse(await readFile(cachePath(ns, key), "utf8")) as { savedAt: number; value: T };
     if (Date.now() - raw.savedAt <= ttlMs) return raw.value;
   } catch {
-    /* sem cache */
+    /* not cached */
   }
   return undefined;
 }
@@ -44,9 +45,9 @@ export async function cacheSet<T>(ns: string, key: string, value: T): Promise<vo
 export const HOUR = 3_600_000;
 export const DAY = 24 * HOUR;
 
-// ---------- segundo nível: cache compartilhado entre instâncias ----------
+// ---------- second level: cache shared across instances ----------
 
-/** O mínimo de um cache chave-valor remoto (na Vercel, o Runtime Cache de `@vercel/functions`). */
+/** The minimum of a remote key-value cache (on Vercel, the Runtime Cache from `@vercel/functions`). */
 export interface SharedCache {
   get(key: string): Promise<unknown>;
   set(key: string, value: unknown, opts: { ttl: number; name?: string }): Promise<void>;
@@ -55,16 +56,16 @@ export interface SharedCache {
 let shared: SharedCache | undefined;
 
 /**
- * Liga um cache compartilhado. Na Vercel o disco (`/tmp`) é de cada instância e some quando ela desliga; sem isso,
- * toda sessão começaria fria, esperando o Overpass (dezenas de segundos por consulta).
+ * Enables a shared cache. On Vercel the disk (`/tmp`) belongs to each instance and disappears when it shuts down;
+ * without this, every session would start cold, waiting for Overpass (tens of seconds per query).
  */
 export function useSharedCache(c: SharedCache | undefined): void {
   shared = c;
 }
 
-/** Só dado de referência (OSM, endereços, rede de ônibus): anúncio muda rápido e fica só no cache local. */
+/** Reference data only (OSM, addresses, bus network): listings change quickly and stay in the local cache. */
 const SHARED_MIN_TTL = DAY;
-/** O Runtime Cache não guarda itens acima de 2 MB. */
+/** The Runtime Cache does not store items above 2 MB. */
 const SHARED_MAX_CHARS = 1_900_000;
 const sharedKey = (ns: string, key: string) => `${ns}/${createHash("sha1").update(key).digest("hex")}`;
 
@@ -76,7 +77,7 @@ async function sharedGet<T>(ns: string, key: string, ttlMs: number, maxAgeMs = t
     const item = JSON.parse(gunzipSync(Buffer.from(raw, "base64")).toString("utf8")) as { savedAt: number; value: T };
     return Date.now() - item.savedAt <= maxAgeMs ? item.value : undefined;
   } catch {
-    return undefined; // cache remoto fora do ar ou cota esgotada: segue sem ele
+    return undefined; // remote cache down or quota exhausted: carry on without it
   }
 }
 
@@ -84,20 +85,20 @@ async function sharedSet<T>(ns: string, key: string, ttlMs: number, value: T): P
   if (!shared || ttlMs < SHARED_MIN_TTL) return;
   try {
     const raw = gzipSync(JSON.stringify({ savedAt: Date.now(), value })).toString("base64");
-    // Guarda por mais tempo que a validade: se a fonte cair, o valor antigo ainda serve (ver `cached`).
+    // Kept longer than its validity: if the source goes down, the old value still serves (see `cached`).
     if (raw.length <= SHARED_MAX_CHARS)
       await shared.set(sharedKey(ns, key), raw, { ttl: Math.round((ttlMs * STALE_FACTOR) / 1000), name: ns });
   } catch {
-    /* sem cache remoto: o local já foi gravado */
+    /* no remote cache: the local one is already written */
   }
 }
 
-/** Quanto tempo além da validade o valor antigo fica guardado para o caso de a fonte cair. */
+/** How long past its validity an old value is kept in case the source goes down. */
 const STALE_FACTOR = 4;
 
 /**
- * Cache em dois níveis: disco local e, se ligado, o compartilhado. Se a fonte falhar (Overpass lotado, site fora do
- * ar), devolve o valor vencido que houver em vez de derrubar a busca: dado de mapa de alguns dias atrás serve.
+ * Two-level cache: local disk and, when enabled, the shared one. If the source fails (Overpass at capacity, site
+ * down), it returns any expired value instead of failing the search: map data from a few days ago still serves.
  */
 export async function cached<T>(ns: string, key: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
   const hit = await cacheGet<T>(ns, key, ttlMs);
@@ -120,11 +121,11 @@ export async function cached<T>(ns: string, key: string, ttlMs: number, fn: () =
   return value;
 }
 
-// ---------- limite de ritmo por host ----------
+// ---------- per-host rate limit ----------
 
 const nextSlot = new Map<string, number>();
 
-/** Garante um intervalo mínimo entre requisições ao mesmo host (fila simples). */
+/** Ensures a minimum interval between requests to the same host (simple queue). */
 export async function throttle(host: string, minIntervalMs: number): Promise<void> {
   const now = Date.now();
   const slot = Math.max(now, nextSlot.get(host) ?? 0);
@@ -138,7 +139,7 @@ export class HttpError extends Error {
     public url: string,
     body: string,
   ) {
-    super(`HTTP ${status} em ${url}: ${body.slice(0, 200)}`);
+    super(`HTTP ${status} at ${url}: ${body.slice(0, 200)}`);
   }
 }
 
@@ -152,8 +153,8 @@ const isPrivateNetwork = (e: unknown) =>
   e instanceof PrivateNetworkError || (e as { cause?: unknown })?.cause instanceof PrivateNetworkError;
 
 /**
- * fetch com timeout, ritmo por host e novas tentativas em 429/5xx/erro de rede.
- * Só fala com endereços públicos (`net.ts`): texto da URL conferido aqui, IP conferido na conexão.
+ * fetch with timeout, per-host pacing and retries on 429/5xx/network errors.
+ * Only talks to public addresses (`net.ts`): the URL text is checked here, the IP when connecting.
  */
 export async function httpFetch(url: string, opts: FetchOpts = {}): Promise<Response> {
   const { minIntervalMs = 500, timeoutMs = 60_000, retries = 2, ...init } = opts;
@@ -166,7 +167,7 @@ export async function httpFetch(url: string, opts: FetchOpts = {}): Promise<Resp
         ...init,
         headers: { "User-Agent": APP_UA, ...(init.headers as Record<string, string>) },
         signal: AbortSignal.timeout(timeoutMs),
-        // O fetch do Node aceita o dispatcher do undici (fora dos tipos do DOM).
+        // Node's fetch accepts undici's dispatcher (not part of the DOM types).
         dispatcher: publicDispatcher,
       } as RequestInit);
       if (res.status === 429 || res.status >= 500) {
@@ -184,14 +185,14 @@ export async function httpFetch(url: string, opts: FetchOpts = {}): Promise<Resp
 }
 
 /**
- * Lê o corpo como texto até `maxBytes` (página colada pelo usuário pode ser um arquivo enorme).
- * Passou do limite, para de baixar e dá erro.
+ * Reads the body as text up to `maxBytes` (a page pasted by the user may be a huge file).
+ * Past the limit, it stops downloading and throws.
  */
 export async function readTextLimited(res: Response, maxBytes: number): Promise<string> {
   const declared = Number(res.headers.get("content-length"));
   if (declared > maxBytes) {
     await res.body?.cancel();
-    throw new Error(`página grande demais (${Math.round(declared / 1e6)} MB)`);
+    throw new Error(t.sources.pageTooLarge(Math.round(declared / 1e6)));
   }
   if (!res.body) return "";
   const reader = res.body.getReader();
@@ -203,7 +204,7 @@ export async function readTextLimited(res: Response, maxBytes: number): Promise<
     size += value.byteLength;
     if (size > maxBytes) {
       await reader.cancel();
-      throw new Error(`página grande demais (mais de ${Math.round(maxBytes / 1e6)} MB)`);
+      throw new Error(t.sources.pageOverLimit(Math.round(maxBytes / 1e6)));
     }
     chunks.push(value);
   }

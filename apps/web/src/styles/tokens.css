@@ -1,4 +1,4 @@
-/* Tokens de design: cores, sombras, fontes. Os componentes usam só estas variáveis. */
+/* Design tokens: colors, shadows, fonts. Components only use these variables. */
 :root {
   --bg: #f4f5f7;
   --surface: #ffffff;

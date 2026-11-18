@@ -3,32 +3,33 @@ import { inBBox, inMultiPolygon, type ParsedRoute } from "@homematch/domain";
 import { parseBusLines } from "./busline.js";
 import { DAY } from "./http.js";
 import { bboxQL, elementPoint, overpass, type OsmElement } from "./osm/overpass.js";
+import { t } from "@homematch/i18n";
 
 /**
- * Trabalho em outra cidade: linhas intermunicipais do OpenStreetMap (as que param nas duas cidades), os pontos de
- * ônibus da cidade onde a pessoa quer morar e os terminais da cidade do trabalho. Tudo numa consulta só, porque o
- * Overpass público vive lotado.
+ * Work in another city: intercity lines from OpenStreetMap (the ones stopping in both cities), the bus stops of the
+ * city where the user wants to live and the terminals of the work city. All in a single query, because the public
+ * Overpass servers are often at capacity.
  */
 
 const ROUTE_RE = "^(bus|trolleybus|minibus|share_taxi|train|light_rail|subway|monorail)$";
 
-/** Uma cidade: bbox para a consulta e, se houver, o limite para conferir quem está dentro. */
+/** A city: bbox for the query and, when available, the boundary to check what is inside. */
 export interface CityArea {
   bbox: BBox;
   boundary?: Polygon[];
 }
 
-/** Terminal, rodoviária ou estação de ônibus: onde o intermunicipal costuma chegar. */
+/** Bus terminal or station: where intercity buses usually arrive. */
 export interface BusStation extends LatLng {
   name: string;
 }
 
 export interface IntercityData {
-  /** Linhas com parada nas duas cidades (um item por relação do OSM; PTv1 vale nos dois sentidos). */
+  /** Lines stopping in both cities (one item per OSM relation; PTv1 counts both ways). */
   routes: ParsedRoute[];
-  /** Pontos de ônibus da cidade de casa. */
+  /** Bus stops of the home city. */
   homeStops: LatLng[];
-  /** Terminais e rodoviárias da cidade do trabalho. */
+  /** Terminals and bus stations of the work city. */
   stations: BusStation[];
 }
 
@@ -40,8 +41,9 @@ export function buildIntercityQuery(home: BBox, work: BBox): string {
   return (
     `[out:json][timeout:180];` +
     `(${stopsIn(home)})->.sa;rel(bn.sa)["type"="route"]["route"~"${ROUTE_RE}"]->.ra;` +
-    // Das que param na cidade de casa, as que também passam pela cidade do trabalho (filtro de bbox na relação:
-    // bem mais leve que achar todos os pontos de uma cidade grande). Quem para mesmo lá é conferido no parse.
+    // Of the lines stopping in the home city, those that also run through the work city (a bbox filter on the
+    // relation: much lighter than finding every stop of a big city). Whether they really stop there is checked
+    // while parsing.
     `rel.ra(${w})->.r;.r out geom;` +
     `.sa out skel qt;` +
     `(nwr["amenity"="bus_station"](${w});nwr["public_transport"="station"]["bus"="yes"](${w}););out center tags qt;`
@@ -50,13 +52,13 @@ export function buildIntercityQuery(home: BBox, work: BBox): string {
 
 const inside = (p: LatLng, a: CityArea) => (a.boundary?.length ? inMultiPolygon(p, a.boundary) : inBBox(p, a.bbox));
 
-/** Parse puro da resposta de `buildIntercityQuery`. */
+/** Pure parsing of the `buildIntercityQuery` response. */
 export function parseIntercity(elements: OsmElement[], home: CityArea, work: CityArea): IntercityData {
   const rels = elements.filter((e) => e.type === "relation" && e.members);
   const ptv2 = new Map(rels.map((r) => [String(r.id), r.tags?.["public_transport:version"] === "2"]));
   const routes: ParsedRoute[] = [];
   for (const l of parseBusLines(rels, undefined, Infinity)) {
-    // As bboxes de cidades vizinhas se sobrepõem: confere pelo limite que a linha para mesmo nas duas.
+    // Neighboring cities' bboxes overlap: use the boundary to check that the line really stops in both.
     if (l.stops.length < 2 || !l.stops.some((s) => inside(s, home)) || !l.stops.some((s) => inside(s, work))) continue;
     routes.push({
       id: l.id,
@@ -76,15 +78,15 @@ export function parseIntercity(elements: OsmElement[], home: CityArea, work: Cit
   const seen = new Set<string>();
   for (const e of elements) {
     if (e.type === "relation") continue;
-    const t = e.tags;
-    if (!t) {
+    const tags = e.tags;
+    if (!tags) {
       if (e.lat != null && e.lon != null) homeStops.push({ lat: e.lat, lng: e.lon });
       continue;
     }
     const p = elementPoint(e);
     if (!p || !inside(p, work)) continue;
-    const name = t.name ?? (t.amenity === "bus_station" ? "Terminal de ônibus" : "Estação de ônibus");
-    // Estação mapeada como ponto e como área: fica uma só.
+    const name = tags.name ?? (tags.amenity === "bus_station" ? t.transit.busTerminal : t.transit.busStation);
+    // A station mapped both as a point and as an area: keep one.
     const key = `${name}|${p.lat.toFixed(3)},${p.lng.toFixed(3)}`;
     if (seen.has(key)) continue;
     seen.add(key);

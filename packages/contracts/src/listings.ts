@@ -2,35 +2,37 @@ import { z } from "zod";
 import { regionSchema } from "./analysis.js";
 import { bboxSchema } from "./geo.js";
 import { citySchema } from "./place.js";
-import { PROPERTY_TYPES } from "./constants.js";
+import { AMENITY_IDS, PROPERTY_TYPES } from "./constants.js";
 
 export const propertyTypeSchema = z.enum(PROPERTY_TYPES);
+export const amenityIdSchema = z.enum(AMENITY_IDS);
 
 /**
- * Fonte de anúncios: um portal com extensão própria ("quintoandar", "chavesnamao"…) ou o site de uma
- * imobiliária achada na cidade ("site:gallinari.com.br"), lido pela extensão genérica.
+ * Listing source: a portal with its own extension ("quintoandar", "chavesnamao"…) or the website of a real estate
+ * agency found in the city ("site:gallinari.com.br"), read by the generic extension.
  */
 export const sourceIdSchema = z.string().min(1).max(120);
 export type SourceId = z.infer<typeof sourceIdSchema>;
-/** "outro" = link colado de um site sem raspador próprio. */
-export type ListingSource = SourceId | "outro";
+/** "other" = a pasted link from a site without its own scraper. */
+export type ListingSource = SourceId | "other";
 
 /**
- * ok = lemos; robots = o site pede para robôs não lerem (respeitamos); bloqueado = o site barra leitura automática;
- * sem-dados = a página não traz os anúncios num formato que dê para ler (falta uma extensão própria); erro = fora do ar.
+ * ok = readable; robots = the site asks robots not to read it (we comply); blocked = the site blocks automated
+ * reads; no-data = the page has no listings in a readable format (needs a dedicated extension); error = site down.
  */
-export const sourceStatusSchema = z.enum(["ok", "robots", "bloqueado", "sem-dados", "erro"]);
+export const SOURCE_STATUSES = ["ok", "robots", "blocked", "no-data", "error"] as const;
+export const sourceStatusSchema = z.enum(SOURCE_STATUSES);
 export type SourceStatus = z.infer<typeof sourceStatusSchema>;
 
-/** Uma fonte que dá (ou não) para ler na cidade escolhida. */
+/** A source that can (or cannot) be read in the chosen city. */
 export const sourceInfoSchema = z.object({
   id: sourceIdSchema,
   label: z.string(),
-  /** portal = site que junta anúncios de muitas imobiliárias; imobiliaria = site da própria imobiliária. */
-  kind: z.enum(["portal", "imobiliaria"]),
+  /** portal = site that aggregates many agencies; agency = the agency's own website. */
+  kind: z.enum(["portal", "agency"]),
   site: z.string(),
   status: sourceStatusSchema,
-  /** Plataforma do site, quando reconhecida ("Kenlo", "Imoview", "Sites do Mercado"…). */
+  /** Website platform, when recognized ("Kenlo", "Imoview", "Sites do Mercado"…). */
   platform: z.string().optional(),
   note: z.string().optional(),
 });
@@ -44,21 +46,22 @@ export const sourcesResultSchema = z.object({
 export type SourcesResult = z.infer<typeof sourcesResultSchema>;
 
 export const listingSchema = z.object({
-  /** "<fonte>:<id na fonte>" */
+  /** "<source>:<id at the source>" */
   id: z.string(),
   source: z.string(),
-  /** Nome da fonte para mostrar ("Chaves na Mão", "Imobiliária Gallinari"). */
+  /** Source name to display ("Chaves na Mão", "Imobiliária Gallinari"). */
   sourceLabel: z.string().optional(),
-  /** Imobiliária que anuncia, quando o portal informa. */
+  /** Agency that advertises the listing, when the portal says. */
   agency: z.string().optional(),
   url: z.string(),
   title: z.string(),
   type: propertyTypeSchema,
   typeLabel: z.string(),
   rent: z.number(),
-  /** Aluguel + condomínio + IPTU (quando conhecido). */
+  /** Rent + condo fee + property tax (when known). */
   total: z.number(),
   condo: z.number().optional(),
+  /** IPTU, the Brazilian property tax (monthly). */
   iptu: z.number().optional(),
   area: z.number().optional(),
   bedrooms: z.number().optional(),
@@ -72,17 +75,17 @@ export const listingSchema = z.object({
   approxLocation: z.boolean(),
   image: z.string().optional(),
   region: z.string().optional(),
-  /** Comodidades detectadas no texto do anúncio: "armario_cozinha", "armario_quarto", "pia", "mobiliado". */
-  amenities: z.array(z.string()).optional(),
+  /** Amenities detected in the listing text. */
+  amenities: z.array(amenityIdSchema).optional(),
 });
 export type Listing = z.infer<typeof listingSchema>;
 
-/** O imóvel que a pessoa procura. Vai para os sites que aceitam filtro e é reaplicado no servidor. */
+/** What the user is looking for. Sent to sites that accept filters and applied again on the server. */
 export const listingFiltersSchema = z.object({
   types: z.array(propertyTypeSchema),
   priceMin: z.number().nullable(),
   priceMax: z.number().nullable(),
-  /** Preço comparado: total (aluguel + condomínio + IPTU) ou só o aluguel. */
+  /** Price compared: total (rent + condo fee + tax) or rent only. */
   basis: z.enum(["total", "rent"]),
   minBedrooms: z.number().min(0),
   minBathrooms: z.number().min(0).optional(),
@@ -103,7 +106,7 @@ export const listingsRequestSchema = z.object({
 });
 export type ListingsRequest = z.infer<typeof listingsRequestSchema>;
 
-// ---------- Meus links ----------
+// ---------- Pasted links ----------
 
 export const linksRequestSchema = z.object({
   urls: z.array(z.string().min(8).max(2048)).min(1).max(60),
@@ -112,7 +115,7 @@ export const linksRequestSchema = z.object({
 export type LinksRequest = z.infer<typeof linksRequestSchema>;
 
 export const linkResultSchema = z.object({
-  /** Posição na lista colada (o número do ícone no mapa). */
+  /** Position in the pasted list (the number on the map marker). */
   index: z.number(),
   url: z.string(),
   listing: listingSchema.optional(),

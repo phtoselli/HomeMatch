@@ -1,11 +1,11 @@
 import { z } from "zod";
 import { latitudeSchema, longitudeSchema, type BBox, type CityRef } from "@homematch/contracts";
 
-/** Coordenada na query string (vem como texto). */
+/** Coordinate in the query string (arrives as text). */
 export const latQuery = z.coerce.number().pipe(latitudeSchema);
 export const lngQuery = z.coerce.number().pipe(longitudeSchema);
 
-/** Retângulo opcional na query string (south, west, north, east): só vale com os quatro. */
+/** Optional rectangle in the query string (south, west, north, east): only valid with all four. */
 export const bboxQuery = {
   south: latQuery.optional(),
   west: lngQuery.optional(),
@@ -19,7 +19,7 @@ export function bboxFrom(q: { south?: number; west?: number; north?: number; eas
     : undefined;
 }
 
-/** Cidade na query string (para achar o operador de ônibus dela). */
+/** City in the query string (to find its bus operator). */
 export const cityQuery = {
   cityId: z.string().max(40).optional(),
   cityName: z.string().max(120).optional(),

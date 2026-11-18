@@ -1,6 +1,6 @@
 import type { Cell, LatLng } from "@homematch/contracts";
 
-/** Índice simples para achar a célula analisada mais próxima de um ponto. */
+/** Simple index to find the analyzed cell closest to a point. */
 export function makeCellLookup(cells: Cell[], cellSizeM: number, maxM = cellSizeM * 0.75) {
   const step = 0.01;
   const buckets = new Map<string, Cell[]>();

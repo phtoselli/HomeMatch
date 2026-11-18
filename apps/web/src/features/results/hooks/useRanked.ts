@@ -19,15 +19,15 @@ import { useLinks } from "@/features/links";
 import type { NumberedListing } from "@/features/map";
 import { useSearchStore } from "@/features/search";
 
-/** Aba de região aberta na lista ("all" = todas). */
+/** Region tab open in the list ("all" = every region). */
 export const useRegionTab = create<{ tab: string; setTab: (t: string) => void }>()((set) => ({
   tab: "all",
   setTab: (tab) => set({ tab }),
 }));
 
 /**
- * Área analisada de um ponto, só entre as regiões do nível escolhido (ou melhor): a exata ou a vizinha (anúncio com
- * posição aproximada), somando a caminhada até ela. Fora delas, o imóvel não aparece.
+ * Analyzed cell of a point, among regions at the chosen level (or better) only: the exact one or a neighbor (listing
+ * with an approximate position), adding the walk to it. Outside them, the listing is not shown.
  */
 function useCellLookup() {
   const analysis = useSearchStore((s) => s.analysis);
@@ -49,8 +49,8 @@ function useCellLookup() {
 }
 
 /**
- * Os imóveis como a lista e o mapa mostram: cada um com a área (trajeto, o que tem perto), a nota
- * e o que não bate com o pedido; agrupados e ordenados. Também os favoritos e os links colados.
+ * Listings as the list and the map show them: each with its cell (commute, what is nearby), score and what does not
+ * match the request; grouped and sorted. Also favorites and pasted links.
  */
 export function useRanked() {
   const { listings, filters, chosen, searchedRegions } = useSearchStore();
@@ -63,7 +63,7 @@ export function useRanked() {
   const features = useFeatures();
   const lookup = useCellLookup();
 
-  // O que precisa ficar perto, com o raio pedido (para dizer "mercado a 2,6 km" quando passa).
+  // What must be nearby, with the requested radius (to say "grocery 2.6 km away" when beyond it).
   const nearWants: NearWant[] = useMemo(
     () =>
       features
@@ -74,13 +74,13 @@ export function useRanked() {
   const rank = useCallback(
     (l: Listing): Ranked => {
       const cell = lookup?.(l);
-      // Sem análise (só links colados) não dá para julgar trajeto nem o que tem perto.
+      // Without an analysis (pasted links only) neither commute nor nearby places can be judged.
       const misses = lookup ? missesOf(l, cell, filters, nearWants) : [];
       return { l, cell, match: matchScore(l, cell, filters, ref), misses };
     },
     [lookup, filters, ref, nearWants],
   );
-  // Só os imóveis dentro das regiões com nível (sem análise, nada a filtrar).
+  // Only listings inside regions with a level (without an analysis, nothing to filter).
   const ranked = useMemo(
     () =>
       sortRanked(
@@ -92,7 +92,7 @@ export function useRanked() {
     [listings, filters, rank, lookup],
   );
   const inTab = useMemo(() => (tab === "all" ? ranked : ranked.filter((x) => x.l.region === tab)), [ranked, tab]);
-  // Favoritos: o anúncio mais novo da busca (se veio de novo) ou o guardado.
+  // Favorites: the newest version from the search (if it came back) or the saved one.
   const favorites = useMemo(() => {
     const live = new Map(listings.map((l) => [l.id, l]));
     return sortRanked(
@@ -109,7 +109,7 @@ export function useRanked() {
     [linkResults],
   );
 
-  // A aba de região deixa de existir quando a busca muda.
+  // The region tab disappears when the search changes.
   useEffect(() => {
     if (tab !== "all" && !searchedRegions.some((r) => r.name === tab)) setTab("all");
   }, [searchedRegions, tab, setTab]);

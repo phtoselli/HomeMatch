@@ -3,8 +3,8 @@ import type { CityRef, FeatureDef, LatLng } from "@homematch/contracts";
 import { api } from "./client";
 
 /**
- * Leituras simples da API (GET), com cache e sem pedido repetido: TanStack Query.
- * As buscas longas em streaming (análise, imóveis, links) ficam nos stores, com o andamento na tela.
+ * Simple API reads (GET), cached and deduplicated: TanStack Query.
+ * The long streamed searches (analysis, listings, links) live in the stores, with progress on screen.
  */
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,15 +21,15 @@ export const queryKeys = {
 
 const NO_FEATURES: FeatureDef[] = [];
 
-/** O que dá para pedir perto de casa (mercado, parque…). Não muda enquanto o app está aberto. */
+/** What can be requested near home (grocery, park…). Does not change while the app is open. */
 export const useFeatures = (): FeatureDef[] =>
   useQuery({ queryKey: queryKeys.features, queryFn: api.features, staleTime: Infinity }).data ?? NO_FEATURES;
 
-/** Portais + imobiliárias da cidade (a 1ª vez numa cidade leva ~30 s: o servidor visita o site de cada uma). */
+/** Portals + the city's agencies (the first time in a city takes ~30 s: the server visits each website). */
 export const useSources = (city: Pick<CityRef, "osmId"> | null) =>
   useQuery({ queryKey: queryKeys.sources(city?.osmId), queryFn: () => api.sources(city), staleTime: 60 * 60_000 });
 
-/** Quem publica as linhas de ônibus da cidade, ou da cidade do trabalho (ex.: morando em Paulínia → EMDEC). */
+/** Who publishes the city's bus lines, or the work city's (e.g. living in Paulínia → EMDEC). */
 export const useOperator = (city: CityRef | null, work?: LatLng | null) =>
   useQuery({
     queryKey: queryKeys.operator(city?.osmId, work ? `${work.lat.toFixed(3)},${work.lng.toFixed(3)}` : null),
@@ -38,7 +38,7 @@ export const useOperator = (city: CityRef | null, work?: LatLng | null) =>
     staleTime: Infinity,
   });
 
-/** Grade de horários de uma linha ("emdec:353"). Passar o mouse várias vezes não repete o pedido. */
+/** Timetable of a line ("emdec:353"). Hovering many times does not repeat the request. */
 export const useTimetable = (id: string | undefined) =>
   useQuery({
     queryKey: queryKeys.timetable(id),

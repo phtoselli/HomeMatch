@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { PointIndex, placeName, rankRegions, scoreGrid } from "@homematch/domain";
-import { buildFeatureQuery, parseFeaturePois, parsePlaceNames } from "../src/features.js";
-import { padBBox } from "@homematch/domain";
+import { PointIndex, levelRank, padBBox, placeName, rankRegions, scoreGrid } from "@homematch/domain";
 import type { BoardingStop } from "@homematch/domain";
+import { t } from "@homematch/i18n";
+import { buildFeatureQuery, parseFeaturePois, parsePlaceNames } from "../src/features.js";
 
 const work = { lat: -23.6, lng: -46.65 };
-// Paradas de uma linha que vai de -23.55 até o trabalho
+// Stops of a line that runs from -23.55 down to work
 const stops: BoardingStop[] = [-23.55, -23.56, -23.57, -23.58].map((lat, i) => ({
   lat,
   lng: -46.65,
@@ -27,87 +27,86 @@ const base = {
   ],
 };
 
-describe("scoreGrid: níveis pelas prioridades (sem tempo máximo)", () => {
+describe("scoreGrid: levels from the priorities (no maximum time)", () => {
   const pois = {
-    parque: [{ id: "p1", feature: "parque", lat: -23.553, lng: -46.651 }],
-    atacarejo: [{ id: "m1", feature: "atacarejo", lat: -23.556, lng: -46.649 }],
+    park: [{ id: "p1", feature: "park", lat: -23.553, lng: -46.651 }],
+    wholesale_market: [{ id: "m1", feature: "wholesale_market", lat: -23.556, lng: -46.649 }],
   };
 
-  it("transporte principal: boa/excelente onde o tempo é bom; ok onde só os lugares batem", () => {
+  it("transit as main priority: good/excellent where the commute is good; ok where only places match", () => {
     const out = scoreGrid({
       ...base,
       features: [
-        { id: "parque", radius: 800, weight: 2 },
-        { id: "atacarejo", radius: 1000, weight: 2 },
+        { id: "park", radius: 800, weight: 2 },
+        { id: "wholesale_market", radius: 1000, weight: 2 },
       ],
       pois,
     });
     expect(out.cells.length).toBeGreaterThan(0);
     expect(out.commuteRefMin).toBeGreaterThanOrEqual(40);
     for (const c of out.cells) {
-      const transit = c.hits.includes("transporte");
+      const transit = c.hits.includes("transit");
       if (c.level === "ok") expect(transit).toBe(false);
       else expect(transit).toBe(true);
-      if (c.level === "excelente") expect(c.hits.length).toBeGreaterThanOrEqual(2);
+      if (c.level === "excellent") expect(c.hits.length).toBeGreaterThanOrEqual(2);
     }
-    // Sem limite de tempo: entram áreas acima do antigo teto, desde que algo seja atingido.
-    expect(out.levels.excelente + out.levels.boa + out.levels.ok).toBe(out.cells.length);
+    // No time limit: areas above the old cap come in, as long as something is met.
+    expect(out.levels.excellent + out.levels.good + out.levels.ok).toBe(out.cells.length);
   });
 
-  it("lugar como principal: perto dele a área é boa ou excelente, mesmo com trajeto ruim", () => {
+  it("a place as main priority: near it the area is good or excellent, even with a bad commute", () => {
     const out = scoreGrid({
       ...base,
       transitWeight: 1,
-      features: [{ id: "parque", radius: 800, weight: 3 }],
+      features: [{ id: "park", radius: 800, weight: 3 }],
       pois,
     });
     for (const c of out.cells) {
-      if (c.hits.includes("parque")) expect(["boa", "excelente"]).toContain(c.level);
+      if (c.hits.includes("park")) expect(["good", "excellent"]).toContain(c.level);
       else expect(c.level).toBe("ok");
     }
-    expect(out.cells.some((c) => c.hits.includes("parque") && c.level === "excelente")).toBe(true);
+    expect(out.cells.some((c) => c.hits.includes("park") && c.level === "excellent")).toBe(true);
   });
 
-  it("nada atingido = fora (a área não entra)", () => {
+  it("nothing met = out (the area is left out)", () => {
     const out = scoreGrid({
       ...base,
       transitWeight: 0,
-      features: [{ id: "parque", radius: 300, weight: 3 }],
-      pois: { parque: [] },
+      features: [{ id: "park", radius: 300, weight: 3 }],
+      pois: { park: [] },
     });
     expect(out.cells).toHaveLength(0);
   });
 
-  it("linha escolhida pela pessoa: perto dos pontos dela, o transporte conta como atingido", () => {
+  it("a line chosen by the user: near its stops, transit counts as met", () => {
     const far = { ...base, stops: [], transitWeight: 3, features: [], pois: {} };
-    const sem = scoreGrid(far);
-    const com = scoreGrid({ ...far, preferredStops: [{ lat: -23.55, lng: -46.65 }] });
-    expect(com.cells.length).toBeGreaterThan(sem.cells.length);
-    expect(com.cells.every((c) => c.hits.includes("transporte"))).toBe(true);
+    const without = scoreGrid(far);
+    const withLine = scoreGrid({ ...far, preferredStops: [{ lat: -23.55, lng: -46.65 }] });
+    expect(withLine.cells.length).toBeGreaterThan(without.cells.length);
+    expect(withLine.cells.every((c) => c.hits.includes("transit"))).toBe(true);
   });
 
-  it("regiões: o nível vem antes da nota", () => {
+  it("regions: the level comes before the score", () => {
     const out = scoreGrid({
       ...base,
-      features: [{ id: "parque", radius: 800, weight: 2 }],
+      features: [{ id: "park", radius: 800, weight: 2 }],
       pois,
     });
     const regions = rankRegions(out.cells, 500);
-    const order = { excelente: 2, boa: 1, ok: 0 } as const;
     for (let i = 1; i < regions.length; i++)
-      expect(order[regions[i - 1]!.level]).toBeGreaterThanOrEqual(order[regions[i]!.level]);
+      expect(levelRank(regions[i - 1]!.level)).toBeGreaterThanOrEqual(levelRank(regions[i]!.level));
     expect(regions[0]!.rank).toBe(1);
   });
 });
 
-describe("modo reserva (poucas linhas no OSM)", () => {
-  it("usa pontos de ônibus para estimar o trajeto quando não há linha direta", () => {
-    // Um parque perto do ponto do norte mantém as áreas de lá no mapa (o tempo de ônibus passa da referência).
-    const com = scoreGrid({
+describe("fallback mode (few lines in OSM)", () => {
+  it("uses bus stops to estimate the commute when there is no direct line", () => {
+    // A park near the northern stop keeps those areas on the map (the bus time goes over the reference).
+    const out = scoreGrid({
       ...base,
       stops: [],
-      features: [{ id: "parque", radius: 2000, weight: 1 }],
-      pois: { parque: [{ id: "p1", feature: "parque", lat: -23.55, lng: -46.65 }] },
+      features: [{ id: "park", radius: 2000, weight: 1 }],
+      pois: { park: [{ id: "p1", feature: "park", lat: -23.55, lng: -46.65 }] },
       fallback: {
         busStops: [
           { lat: -23.55, lng: -46.651 },
@@ -116,16 +115,16 @@ describe("modo reserva (poucas linhas no OSM)", () => {
         workStopDistM: 100,
       },
     });
-    expect(com.cells.some((c) => c.via === "ônibus (estimado)")).toBe(true);
+    expect(out.cells.some((c) => c.via === t.transit.estimatedBus && c.travel === "estimated")).toBe(true);
   });
 });
 
-describe("consultas de características", () => {
-  it("pedem coordenadas (out center), nunca `out tags`, e descartam praças", () => {
-    const q = buildFeatureQuery("parque", { south: -23, west: -47, north: -22.9, east: -46.9 });
+describe("feature queries", () => {
+  it("ask for coordinates (out center), never `out tags`, and drop squares", () => {
+    const q = buildFeatureQuery("park", { south: -23, west: -47, north: -22.9, east: -46.9 });
     expect(q).toMatch(/out center qt;$/);
     expect(q).not.toMatch(/out[^;]*tags/);
-    const pois = parseFeaturePois("parque", [
+    const pois = parseFeaturePois("park", [
       { type: "way", id: 1, center: { lat: -22.95, lon: -46.95 }, tags: { name: "Parque Taquaral" } },
       { type: "node", id: 2, lat: -22.95, lon: -46.96, tags: { name: "Praça Carlos Gomes" } },
       { type: "node", id: 3, tags: { name: "Sem coordenada" } },
@@ -134,26 +133,25 @@ describe("consultas de características", () => {
   });
 });
 
-describe("caminhada longa não é transporte", () => {
-  it("sem ônibus e longe do trabalho, o transporte não conta como atingido", () => {
+describe("a long walk is not transit", () => {
+  it("without buses and far from work, transit does not count as met", () => {
     const out = scoreGrid({
       ...base,
       stops: [],
-      features: [{ id: "parque", radius: 5000, weight: 1 }],
-      pois: { parque: [{ id: "p1", feature: "parque", lat: -23.57, lng: -46.65 }] },
+      features: [{ id: "park", radius: 5000, weight: 1 }],
+      pois: { park: [{ id: "p1", feature: "park", lat: -23.57, lng: -46.65 }] },
     });
-    for (const c of out.cells) {
-      if (c.via === "a pé" && c.commuteMin > 60) expect(c.hits).not.toContain("transporte");
-    }
-    expect(out.cells.some((c) => c.via === "a pé" && c.commuteMin > 60)).toBe(true);
+    const longWalk = (c: { travel: string; commuteMin: number }) => c.travel === "walk" && c.commuteMin > 60;
+    for (const c of out.cells) if (longWalk(c)) expect(c.hits).not.toContain("transit");
+    expect(out.cells.some(longWalk)).toBe(true);
   });
 });
 
-describe("nome das regiões (nunca coordenadas)", () => {
+describe("region names (never coordinates)", () => {
   const box = { south: -22.85, north: -22.65, west: -47.25, east: -47.05 }; // ~22 km
   const idx = (ps: { lat: number; lng: number; name: string; rank: number }[]) => new PointIndex(ps, 2000, -22.75);
 
-  it("bairro perto: o mais importante entre os próximos", () => {
+  it("a nearby neighbourhood: the most important among the closest", () => {
     const places = idx([
       { lat: -22.751, lng: -47.15, name: "Loteamento X", rank: 2.5 },
       { lat: -22.752, lng: -47.151, name: "Centro", rank: 0 },
@@ -161,15 +159,15 @@ describe("nome das regiões (nunca coordenadas)", () => {
     expect(placeName({ lat: -22.75, lng: -47.15 }, places, box, "Paulínia")).toBe("Centro");
   });
 
-  it("sem bairro perto: o mais próximo até 6 km; sem nenhum, a cidade e a zona", () => {
+  it("no close neighbourhood: the nearest up to 6 km; none at all, the city and its side", () => {
     const places = idx([{ lat: -22.75, lng: -47.15, name: "Nova Paulínia", rank: 0 }]);
-    expect(placeName({ lat: -22.785, lng: -47.15 }, places, box, "Paulínia")).toBe("Nova Paulínia"); // ~3,9 km
+    expect(placeName({ lat: -22.785, lng: -47.15 }, places, box, "Paulínia")).toBe("Nova Paulínia"); // ~3.9 km
     expect(placeName({ lat: -22.66, lng: -47.15 }, idx([]), box, "Paulínia")).toBe("Paulínia, zona norte");
     expect(placeName({ lat: -22.84, lng: -47.06 }, idx([]), box, "Paulínia")).toBe("Paulínia, zona sudeste");
     expect(placeName({ lat: -22.75, lng: -47.15 }, idx([]), box, "Paulínia")).toBe("Paulínia, centro");
   });
 
-  it("parsePlaceNames: bairro oficial (limite) e loteamento com centro, sem nome fica de fora", () => {
+  it("parsePlaceNames: official neighbourhood (boundary) and residential area with a centre; unnamed ones are left out", () => {
     const out = parsePlaceNames([
       {
         type: "relation",

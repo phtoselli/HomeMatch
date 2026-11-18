@@ -1,4 +1,4 @@
-// Regras puras do HomeMatch: sem rede, sem disco, sem React. Rodam iguais na API, no navegador e nos testes.
+// HomeMatch's pure rules: no network, no disk, no React. They run the same on the API, in the browser and in tests.
 export * from "./geo.js";
 export * from "./format.js";
 export * from "./url.js";
@@ -9,6 +9,7 @@ export * from "./transit/lines.js";
 export * from "./transit/timetable.js";
 export * from "./analysis/grid.js";
 export * from "./analysis/levels.js";
+export * from "./storage/legacy.js";
 export * from "./search/listing-filters.js";
 export * from "./search/criteria.js";
 export * from "./search/ranking.js";

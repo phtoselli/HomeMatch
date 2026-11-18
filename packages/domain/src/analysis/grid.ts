@@ -1,4 +1,5 @@
 import type { BBox, Cell, FeatureRequest, LatLng, Poi, Polygon, Region, RegionLevel } from "@homematch/contracts";
+import { t } from "@homematch/i18n";
 import { PointIndex, bboxOf, gridCenters, inMultiPolygon, padBBox } from "../geo.js";
 import { commuteFrom, genericBusCommute, type BoardingStop, type Commute } from "../transit/model.js";
 import { hubCommute, type Hub } from "../transit/intercity.js";
@@ -17,55 +18,55 @@ export interface GridInput {
   bbox: BBox;
   boundary?: Polygon[];
   work: LatLng;
-  /** Nome da cidade: dá nome às áreas longe de qualquer bairro mapeado ("Paulínia, zona norte"). */
+  /** City name: names cells far from any mapped neighborhood ("Paulínia, north side"). */
   cityName?: string;
   cellSizeM: number;
   maxWalkToStopM: number;
-  /** Importância do transporte até o trabalho (0 = não conta). */
+  /** Importance of transit to work (0 = ignored). */
   transitWeight: number;
-  /** Lugares que a pessoa quer perto, com raio e importância. */
+  /** Places the user wants nearby, with radius and importance. */
   features: FeatureRequest[];
   pois: Record<string, Poi[]>;
   stops: BoardingStop[];
   places: { lat: number; lng: number; name: string; rank: number }[];
-  /** Pontos das linhas que a pessoa escolheu: perto deles, o transporte conta como atingido. */
+  /** Stops of the lines the user picked: near them, transit counts as met. */
   preferredStops?: LatLng[];
-  /** Sem linhas mapeadas: ônibus estimado entre pontos. `intercity` = o trabalho fica em outra cidade. */
+  /** No mapped lines: estimated bus between stops. `intercity` = work is in another city. */
   fallback?: { busStops: LatLng[]; workStopDistM: number; intercity?: boolean };
   /**
-   * Trabalho em outra cidade sem linha intermunicipal mapeada: terminais de lá (com o caminho até o trabalho).
-   * Com eles, o intermunicipal estimado vai até o terminal (e não até a porta do trabalho). Usa `fallback.busStops`.
+   * Work in another city with no mapped intercity line: that city's terminals (with the way on to work).
+   * With them, the estimated intercity bus ends at a terminal (not at the office door). Uses `fallback.busStops`.
    */
   hubs?: Hub[];
 }
 
 export interface GridOutput {
-  /** Só as áreas com nível (as outras não entram na busca de imóveis). */
+  /** Only cells with a level (the others are left out of the listing search). */
   cells: Cell[];
   cellsTotal: number;
   levels: Record<RegionLevel, number>;
   commuteBestMin: number;
   commuteRefMin: number;
-  /** Terminais (`Hub.id`) que alguma célula mantida usa. */
+  /** Terminals (`Hub.id`) used by some kept cell. */
   hubsUsed: string[];
 }
 
-/** Até onde guardar a distância de um lugar além do raio pedido (para o card dizer "parque a 2,1 km"). */
+/** How far beyond the requested radius a place's distance is kept (so a card can say "park 2.1 km away"). */
 const INFO_REACH = 3;
 
-/** Critérios da busca, na ordem: transporte primeiro (ganha no empate de peso), depois os lugares. */
+/** Search criteria, in order: transit first (wins weight ties), then places. */
 export function criteriaOf(transitWeight: number, features: FeatureRequest[]): { id: string; weight: number }[] {
   const out = [
     ...(transitWeight > 0 ? [{ id: TRANSIT_CRITERION, weight: transitWeight }] : []),
     ...features.map((f) => ({ id: f.id, weight: f.weight })),
   ];
-  // Sem nada pedido, o transporte decide (senão nenhuma região teria nível).
+  // With nothing requested, transit decides (otherwise no region would get a level).
   return out.length ? out : [{ id: TRANSIT_CRITERION, weight: IMPORTANCE.main }];
 }
 
 /**
- * Parte pura da análise: percorre a cidade inteira, calcula o tempo até o trabalho (sem limite) e a distância até
- * cada lugar pedido, e dá a cada área um nível (excelente, boa, ok ou fora) pelas prioridades da pessoa.
+ * Pure part of the analysis: walks the whole city, computes the commute (no limit) and the distance to each
+ * requested place, and gives each cell a level (excellent, good, ok or out) from the user's priorities.
  */
 export function scoreGrid(input: GridInput): GridOutput {
   const { work, features } = input;
@@ -79,7 +80,7 @@ export function scoreGrid(input: GridInput): GridOutput {
   const hubs = input.hubs ?? [];
   const criteria = criteriaOf(input.transitWeight, features);
 
-  // 1ª passada: tempo até o trabalho de cada área (o melhor da cidade define o que é "bem servido").
+  // 1st pass: commute of each cell (the city's best defines what "well served" means).
   const centers = gridCenters(input.bbox, input.cellSizeM).filter(
     (c) => !input.boundary || inMultiPolygon(c, input.boundary),
   );
@@ -102,14 +103,14 @@ export function scoreGrid(input: GridInput): GridOutput {
     }
     return commute;
   });
-  // Caminhada longa (sem ônibus por perto) não é transporte: não conta para o melhor tempo nem como atingido.
-  const usable = (c: Commute) => !noTransitNear({ via: c.via, commuteMin: c.minutes });
+  // A long walk (no bus nearby) is not transit: it counts neither for the best time nor as met.
+  const usable = (c: Commute) => !noTransitNear({ travel: c.travel, commuteMin: c.minutes });
   const best = commutes.reduce((m, c) => (usable(c) ? Math.min(m, c.minutes) : m), Infinity);
   const ref = commuteRef(best);
 
-  // 2ª passada: critérios atingidos, nível e nota.
+  // 2nd pass: criteria met, level and score.
   const cells: Cell[] = [];
-  const levels: Record<RegionLevel, number> = { excelente: 0, boa: 0, ok: 0 };
+  const levels: Record<RegionLevel, number> = { excellent: 0, good: 0, ok: 0 };
   const hubsUsed = new Set<string>();
   centers.forEach((c, i) => {
     const commute = commutes[i]!;
@@ -117,10 +118,10 @@ export function scoreGrid(input: GridInput): GridOutput {
     const featureDist: Record<string, number> = {};
     for (const cr of criteria) {
       if (cr.id === TRANSIT_CRITERION) {
-        const t = commute.minutes;
-        const inTime = t <= ref && usable(commute);
+        const minutes = commute.minutes;
+        const inTime = minutes <= ref && usable(commute);
         const nearLine = !!prefIdx?.nearest(c, input.maxWalkToStopM);
-        let fit = inTime ? 0.5 + 0.5 * Math.max(0, Math.min(1, (ref - t) / Math.max(1, ref - best))) : 0;
+        let fit = inTime ? 0.5 + 0.5 * Math.max(0, Math.min(1, (ref - minutes) / Math.max(1, ref - best))) : 0;
         if (nearLine) fit = Math.max(fit, 0.85);
         results.push({ id: cr.id, weight: cr.weight, hit: inTime || nearLine, fit });
         continue;
@@ -143,6 +144,7 @@ export function scoreGrid(input: GridInput): GridOutput {
       lat: c.lat,
       lng: c.lng,
       commuteMin: Math.round(commute.minutes),
+      travel: commute.travel,
       via: commute.via,
       routeId: commute.routeId,
       featureDist,
@@ -162,47 +164,43 @@ export function scoreGrid(input: GridInput): GridOutput {
   };
 }
 
-/** Até onde um bairro dá nome às áreas em volta (perto) e, sem nenhum perto, o mais próximo que houver. */
+/** How far a neighborhood names the cells around it and, with none close, the farthest one still used. */
 export const PLACE_REACH = { nearM: 2500, farM: 6000 };
 
 /**
- * Nome de uma área: o bairro mais "importante" (oficial > suburb > quarter > neighbourhood > loteamento) entre os
- * mais próximos; sem bairro perto, o mais próximo até 6 km; sem nenhum, a cidade e a zona ("Paulínia, zona norte").
- * Nunca coordenadas: o nome aparece na tela e é usado para buscar imóveis nos portais.
+ * Name of a cell: the most "important" neighborhood (official > suburb > quarter > neighbourhood > development)
+ * among the closest ones; with none close, the closest within 6 km; with none at all, the city and side of town
+ * ("Paulínia, north side"). Never coordinates: the name is shown to the user and used to search portals.
  */
 export function placeName(
   c: LatLng,
   places: PointIndex<{ lat: number; lng: number; name: string; rank: number }>,
   bbox: BBox,
-  cityName = "Região",
+  cityName: string = t.regions.fallbackCity,
 ): string {
   const near = places.within(c, PLACE_REACH.nearM).sort((a, b) => a.dist - b.dist);
   if (near.length)
     return near.slice(0, 3).sort((a, b) => a.dist + a.item.rank * 400 - (b.dist + b.item.rank * 400))[0]!.item.name;
   const far = places.nearest(c, PLACE_REACH.farM);
   if (far) return far.item.name;
-  return `${cityName}, ${zoneOf(c, bbox)}`;
+  return t.regions.citySide(cityName, t.regions.sides[sideOf(c, bbox)]);
 }
 
-/** Zona da cidade pela posição em relação ao centro da bbox (centro, norte, sudeste…). */
-export function zoneOf(c: LatLng, bbox: BBox): string {
+export type CitySide =
+  "center" | "north" | "south" | "east" | "west" | "northeast" | "northwest" | "southeast" | "southwest";
+
+/** Side of town from the position relative to the bbox center (center, north, southeast…). */
+export function sideOf(c: LatLng, bbox: BBox): CitySide {
   const center = { lat: (bbox.south + bbox.north) / 2, lng: (bbox.west + bbox.east) / 2 };
   const dy = (c.lat - center.lat) * 111_320;
   const dx = (c.lng - center.lng) * 111_320 * Math.cos((center.lat * Math.PI) / 180);
-  if (Math.hypot(dx, dy) < 2000) return "centro";
-  const ns = dy > Math.abs(dx) / 2 ? "norte" : dy < -Math.abs(dx) / 2 ? "sul" : "";
-  const ew = dx > Math.abs(dy) / 2 ? "leste" : dx < -Math.abs(dy) / 2 ? "oeste" : "";
-  const DIAG: Record<string, string> = {
-    "norte-leste": "nordeste",
-    "norte-oeste": "noroeste",
-    "sul-leste": "sudeste",
-    "sul-oeste": "sudoeste",
-  };
-  const dir = ns && ew ? DIAG[`${ns}-${ew}`]! : ns || ew;
-  return `zona ${dir}`;
+  if (Math.hypot(dx, dy) < 2000) return "center";
+  const ns = dy > Math.abs(dx) / 2 ? "north" : dy < -Math.abs(dx) / 2 ? "south" : "";
+  const ew = dx > Math.abs(dy) / 2 ? "east" : dx < -Math.abs(dy) / 2 ? "west" : "";
+  return ((ns + ew) as CitySide) || "center";
 }
 
-/** Agrupa as células por bairro e ordena: primeiro o nível (o melhor da região), depois a nota. */
+/** Groups cells by neighborhood and sorts: level first (the region's best), then score. */
 export function rankRegions(cells: Cell[], cellSizeM: number): Region[] {
   const groups = new Map<string, Cell[]>();
   for (const c of cells) {
@@ -214,7 +212,7 @@ export function rankRegions(cells: Cell[], cellSizeM: number): Region[] {
   for (const [name, cs] of groups) {
     cs.sort((a, b) => levelRank(b.level) - levelRank(a.level) || b.score - a.score);
     const bestCell = cs[0]!;
-    // A nota da região vem das melhores áreas do melhor nível dela.
+    // The region's score comes from the best cells of its best level.
     const top = cs.filter((c) => c.level === bestCell.level).slice(0, 3);
     const via = new Map<string, number>();
     for (const c of cs) via.set(c.via, (via.get(c.via) ?? 0) + 1);
@@ -232,9 +230,10 @@ export function rankRegions(cells: Cell[], cellSizeM: number): Region[] {
       bbox: padBBox(bboxOf(cs), cellSizeM / 2),
       commuteMin: Math.min(...cs.map((c) => c.commuteMin)),
       commuteAvg: Math.round(cs.reduce((s, c) => s + c.commuteMin, 0) / cs.length),
+      travel: bestCell.travel,
       score: Math.round((top.reduce((s, c) => s + c.score, 0) / top.length) * 10) / 10,
       cellCount: cs.length,
-      // Primeiro o trajeto da melhor área (o que define o nível), depois os mais comuns.
+      // The best cell's route first (it defines the level), then the most common ones.
       via: [
         bestCell.via,
         ...[...via.entries()]

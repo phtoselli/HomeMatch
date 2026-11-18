@@ -1,8 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { ApiError } from "@homematch/contracts";
+import { t } from "@homematch/i18n";
 
-/** Erro com status HTTP próprio (ex.: 404 "linha não encontrada"). O resto vira 502: falha de uma fonte externa. */
+/** Error with its own HTTP status (e.g. 404 "line not found"). Anything else becomes 502: an external source failed. */
 export class HttpProblem extends Error {
   constructor(
     readonly status: number,
@@ -15,12 +16,12 @@ export class HttpProblem extends Error {
 export function registerErrorHandler(app: FastifyInstance) {
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof z.ZodError) {
-      const body: ApiError = { error: "Parâmetros inválidos", issues: err.issues };
+      const body: ApiError = { error: t.api.invalidParams, issues: err.issues };
       return reply.status(400).send(body);
     }
     if (err instanceof HttpProblem) return reply.status(err.status).send({ error: err.message } satisfies ApiError);
     const message = err instanceof Error ? err.message : String(err);
-    // Erros do próprio Fastify (JSON malformado, corpo grande demais) já trazem o status certo.
+    // Fastify's own errors (malformed JSON, body too large) already carry the right status.
     const status = (err as { statusCode?: number }).statusCode;
     if (status && status >= 400 && status < 500)
       return reply.status(status).send({ error: message } satisfies ApiError);

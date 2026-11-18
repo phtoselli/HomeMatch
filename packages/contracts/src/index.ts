@@ -1,4 +1,4 @@
-// Contrato entre a API e o app: schemas zod (validação) e os tipos derivados deles (uma fonte só).
+// Contract between the API and the app: zod schemas (validation) and the types derived from them (one source).
 export * from "./constants.js";
 export * from "./geo.js";
 export * from "./place.js";

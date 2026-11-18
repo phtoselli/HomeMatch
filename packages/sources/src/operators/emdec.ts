@@ -1,11 +1,13 @@
 import type { BusLine, LatLng, LineTimetable } from "@homematch/contracts";
+import { t } from "@homematch/i18n";
 import { distance } from "@homematch/domain";
 import { DAY, HttpError, cached, httpFetch } from "../http.js";
 import type { ParsedRoute } from "@homematch/domain";
 import type { TransitOperator } from "./types.js";
 
-// EMDEC (Campinas/SP). O portal público de itinerários desenha o mapa a partir de duas camadas GeoJSON
-// (todas as linhas e todos os pontos, em ordem), e a consulta de linhas tem nome, empresa e destinos.
+// EMDEC (Campinas/SP). The public itinerary portal draws its map from two GeoJSON layers (every line and every
+// stop, in order), and the line lookup has names, companies and destinations. Field names below (num_linha,
+// sentido…) are the operator's own and must stay as published.
 const BASE = "https://portal.emdec.com.br";
 export const EMDEC_URLS = {
   lines: `${BASE}/itinerarios/js/lin_itinerarios.js`,
@@ -15,7 +17,7 @@ export const EMDEC_URLS = {
   map: (ref: string, dir: number) => `${BASE}/itinerarios/?linha=${encodeURIComponent(ref)}&sentido=${dir}`,
 };
 
-// ---------- Parse puro ----------
+// ---------- Pure parsing ----------
 
 interface Feature<P, G> {
   properties: P;
@@ -25,11 +27,11 @@ interface FeatureCollection<P, G> {
   features: Feature<P, G>[];
 }
 
-/** As camadas vêm como `var geoJSONLinItinerarios = { ...GeoJSON... };`. */
+/** The layers come as `var geoJSONLinItinerarios = { ...GeoJSON... };`. */
 export function parseGeoJsonVar<P, G>(js: string): FeatureCollection<P, G> {
   const start = js.indexOf("{");
   const end = js.lastIndexOf("}");
-  if (start < 0 || end < start) throw new Error("camada GeoJSON da EMDEC em formato inesperado");
+  if (start < 0 || end < start) throw new Error("EMDEC GeoJSON layer in an unexpected format");
   return JSON.parse(js.slice(start, end + 1)) as FeatureCollection<P, G>;
 }
 
@@ -38,9 +40,9 @@ export interface EmdecStop extends LatLng {
   seq: number;
   street: string;
   number?: string;
-  /** "Embarque" ou "Desembarque". */
+  /** "Embarque" (boarding) or "Desembarque" (alighting only), as published. */
   use?: string;
-  /** Linhas que param aqui (ex.: ["350", "353", "358"]). */
+  /** Lines that stop here (e.g. ["350", "353", "358"]). */
   lines: string[];
 }
 
@@ -68,7 +70,7 @@ type StopGeom = { type: "Point"; coordinates: [number, number] };
 
 const key = (ref: string, dir: number) => `${ref}|${dir}`;
 
-/** Junta trajetos e pontos por linha + sentido; pontos em ordem de passagem. */
+/** Joins shapes and stops per line + direction; stops in travel order. */
 export function parseEmdecNetwork(linesJs: string, stopsJs: string): EmdecDirection[] {
   const byKey = new Map<string, EmdecDirection>();
   const get = (ref: string, dir: number) => {
@@ -118,12 +120,12 @@ export function parseEmdecNetwork(linesJs: string, stopsJs: string): EmdecDirect
 
 export interface EmdecLineInfo {
   ref: string; // "353", "126.1"
-  code: string; // código interno usado na página de detalhe ("353283D")
+  code: string; // internal code used by the detail page ("353283D")
   name: string;
   company?: string;
 }
 
-/** Resposta da busca de linhas (autocomplete do portal). */
+/** Line search response (the portal's autocomplete). */
 export function parseEmdecSearch(json: unknown): EmdecLineInfo[] {
   if (!Array.isArray(json)) return [];
   const out: EmdecLineInfo[] = [];
@@ -143,7 +145,7 @@ export function parseEmdecSearch(json: unknown): EmdecLineInfo[] {
         company: t.empresa?.trim() || undefined,
       });
     } catch {
-      // linha malformada: ignora
+      // malformed row: skip
     }
   }
   return out;
@@ -152,7 +154,7 @@ export function parseEmdecSearch(json: unknown): EmdecLineInfo[] {
 export interface EmdecLineDetail {
   name?: string;
   company?: string;
-  /** Por sentido: de onde parte e o letreiro (destino). */
+  /** Per direction: where it starts and the headsign (destination). */
   directions: Record<number, { from?: string; to?: string }>;
 }
 
@@ -162,7 +164,7 @@ const clean = (s: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-/** Página de detalhe da linha (HTML devolvido por detalhe_linha.php). */
+/** Line detail page (HTML returned by detalhe_linha.php). */
 export function parseEmdecDetail(html: string): EmdecLineDetail {
   const field = (label: string) =>
     html.match(new RegExp(`<small>${label}</small></div>\\s*<div[^>]*>([^<]*)<`, "i"))?.[1];
@@ -183,8 +185,8 @@ export function parseEmdecDetail(html: string): EmdecLineDetail {
 }
 
 /**
- * Grade de horários da página de detalhe: um bloco "Horários de partida de <ponto>" por sentido,
- * com "Dias úteis", "Sábados", "Domingos/Feriados" e os horários (às vezes com uma letra de legenda).
+ * Timetable from the detail page: one "Horários de partida de <stop>" block per direction, with "Dias úteis",
+ * "Sábados", "Domingos/Feriados" and the times (sometimes with a legend letter). The patterns match the page text.
  */
 export function parseEmdecTimetable(html: string, ref: string): LineTimetable {
   const info = parseEmdecDetail(html);
@@ -221,7 +223,7 @@ export function parseEmdecTimetable(html: string, ref: string): LineTimetable {
   };
 }
 
-/** "126,1" / "linha 353" → "126.1" / "353". */
+/** "126,1" / "linha 353" → "126.1" / "353" (users type the line the Brazilian way). */
 export function normalizeRef(q: string): string {
   return q
     .trim()
@@ -254,11 +256,11 @@ export function toBusLine(
 ): BusLine {
   const dir = info?.detail?.directions[d.direction];
   const stopName = (s: EmdecStop) =>
-    [s.street, s.number].filter(Boolean).join(", ") + (s.use === "Desembarque" ? " (só desembarque)" : "");
+    [s.street, s.number].filter(Boolean).join(", ") + (s.use === "Desembarque" ? ` ${t.transit.alightOnlyStop}` : "");
   return {
     id: `emdec:${d.ref}:${d.direction}`,
     ref: d.ref,
-    name: info?.name || `Linha ${d.ref}`,
+    name: info?.name || t.transit.lineName(d.ref),
     from: dir?.from ?? d.stops[0]?.street,
     to: dir?.to ?? d.stops.at(-1)?.street,
     mode: "bus",
@@ -272,7 +274,7 @@ export function toBusLine(
   };
 }
 
-/** Tira pontos quase colineares/próximos (o traçado vai para o navegador em toda análise). */
+/** Drops nearly collinear/close points (the shape is sent to the browser on every analysis). */
 export function simplify(line: [number, number][], minM = 15): [number, number][] {
   if (line.length <= 2) return line;
   const out: [number, number][] = [line[0]!];
@@ -285,7 +287,7 @@ export function simplify(line: [number, number][], minM = 15): [number, number][
   return out;
 }
 
-// ---------- Rede (download com cache) ----------
+// ---------- Network (cached download) ----------
 
 async function getText(url: string, init?: { method: string; body: URLSearchParams }): Promise<string> {
   const cacheKey = init ? `${url}?${init.body}` : url;
@@ -304,7 +306,7 @@ async function getText(url: string, init?: { method: string; body: URLSearchPara
 
 let memo: { at: number; data: Promise<EmdecDirection[]> } | null = null;
 
-/** Rede completa (≈14 MB na primeira vez; depois vem do cache em disco por 1 dia). */
+/** Full network (≈14 MB the first time; then served from the disk cache for 1 day). */
 export function emdecNetwork(): Promise<EmdecDirection[]> {
   if (!memo || Date.now() - memo.at > DAY) {
     const data = Promise.all([getText(EMDEC_URLS.lines), getText(EMDEC_URLS.stops)]).then(([l, s]) =>
@@ -328,11 +330,11 @@ async function lineInfo(ref: string): Promise<{ name?: string; company?: string;
     const html = await getText(EMDEC_URLS.detail, { method: "POST", body: new URLSearchParams({ term: found.code }) });
     return { name: found.name, company: found.company, detail: parseEmdecDetail(html) };
   } catch {
-    return {}; // nome/destino são enfeite: sem eles a linha ainda aparece
+    return {}; // name/destination are cosmetic: the line still shows without them
   }
 }
 
-/** Página de detalhe da linha (nome, empresa, destinos e grade de horários). */
+/** Line detail page (name, company, destinations and timetable). */
 async function detailHtml(ref: string): Promise<string | null> {
   const found = (await searchLines(ref)).find((l) => l.ref === ref);
   if (!found) return null;
@@ -356,7 +358,7 @@ export const emdec: TransitOperator = {
     id: "emdec",
     name: "EMDEC",
     site: "https://portal.emdec.com.br/consultalinha/",
-    provides: "trajetos oficiais, pontos de parada em ordem, nomes e destinos das linhas municipais",
+    provides: t.transit.emdecProvides,
   },
 
   serves: (c) => c.osmId === "R298227" || (/^campinas$/i.test(c.name.trim()) && (c.stateCode ?? "SP") === "SP"),
@@ -365,7 +367,7 @@ export const emdec: TransitOperator = {
     const ref = normalizeRef(q);
     const net = await emdecNetwork();
     if (net.some((d) => d.ref === ref)) return linesFor([ref]);
-    // Pelo nome ("Alphaville") ou número parcial: usa a busca do portal.
+    // By name ("Alphaville") or partial number: use the portal's search.
     const hits = (await searchLines(q.trim()).catch(() => [])).map((h) => h.ref);
     return linesFor([...new Set(hits)].slice(0, 4));
   },
@@ -378,7 +380,7 @@ export const emdec: TransitOperator = {
 
   async linesNear(p, radiusM, maxLines) {
     const net = await emdecNetwork();
-    const best = new Map<string, number>(); // ref → menor distância
+    const best = new Map<string, number>(); // ref → shortest distance
     const perDir = new Map<string, number>();
     for (const d of net) {
       let min = Infinity;
@@ -415,7 +417,7 @@ export const emdec: TransitOperator = {
         path: d.stops.map((s) => [s.lat, s.lng] as [number, number]),
         alightOnly: d.stops.map((s) => s.use === "Desembarque"),
         shape: d.segments.map(simplify),
-        ptv2: true, // cada sentido é separado: não inverte
+        ptv2: true, // each direction is separate: do not reverse
       }));
   },
 };

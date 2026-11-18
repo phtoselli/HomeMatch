@@ -2,7 +2,7 @@ import L from "leaflet";
 import type { City } from "@homematch/contracts";
 import { useLayer } from "../hooks/useLayer";
 
-/** Contorno da cidade, tracejado. */
+/** City outline, dashed. */
 export function Boundary({ city, visible }: { city: City | null; visible: boolean }) {
   useLayer(
     (g) => {

@@ -6,12 +6,12 @@ import { FEATURE_ICON, iconSvg } from "@/shared/ui";
 import { useLayer } from "../hooks/useLayer";
 import { esc } from "../lib/leaflet";
 
-/** A partir deste zoom os lugares viram pins com ícone (carrinho, árvore…); antes, pontos coloridos. */
+/** From this zoom on, places become icon pins (cart, tree…); before it, colored dots. */
 const PIN_ZOOM = 14;
-/** Até quantos lugares dá para mostrar todos como pin sem pesar o mapa. */
+/** Up to how many places can all be shown as pins without slowing the map. */
 const MAX_PINS = 300;
 
-/** Pin com o ícone da característica (mercado, parque, academia…) para cada lugar ativo. */
+/** Pin with the feature icon (grocery, park, gym…) for each active place. */
 export function Pois({
   analysis,
   features,
@@ -39,8 +39,8 @@ export function Pois({
     }
     return m;
   }, [features]);
-  // De longe, pontos leves em canvas; de perto, pins com ícone só para o que está na tela
-  // (com mercado + farmácia + padaria numa cidade grande seriam milhares de elementos no DOM).
+  // From afar, light canvas dots; up close, icon pins only for what is on screen
+  // (grocery + pharmacy + bakery in a big city would be thousands of DOM elements).
   const map = useMap();
   const [view, setView] = useState(() => ({ zoom: map.getZoom(), bounds: map.getBounds() }));
   useMapEvents({ moveend: () => setView({ zoom: map.getZoom(), bounds: map.getBounds() }) });
@@ -49,7 +49,7 @@ export function Pois({
     [analysis, hidden],
   );
   const total = useMemo(() => shown.reduce((n, [, l]) => n + l.length, 0), [shown]);
-  // Poucos lugares: sempre pin. Muitos: pin só de perto (e só na área visível).
+  // Few places: always pins. Many: pins only up close (and only in the visible area).
   const few = total <= MAX_PINS;
   const close = few || view.zoom >= PIN_ZOOM;
   useLayer(
@@ -78,7 +78,7 @@ export function Pois({
         }
       }
     },
-    // De longe não precisa refazer a cada arrasto; de perto, refaz para a área visível.
+    // From afar there is no need to rebuild on every drag; up close, rebuild for the visible area.
     [shown, icons, close, !few && close ? view.bounds.toBBoxString() : ""],
     visible,
   );

@@ -6,14 +6,15 @@ import { detectAmenities, normalizeType, slugify } from "../normalize.js";
 import { SourceBlockedError, type SearchArgs, type SourceAdapter } from "../types.js";
 import { robotsStatus } from "./robots.js";
 import type { PageCtx, RawListing, SiteExtension } from "./types.js";
+import { t } from "@homematch/i18n";
 
 /**
- * Motor comum das extensões: tudo o que é igual em qualquer site.
- * - robots.txt respeitado antes de cada página;
- * - ritmo por site, cache de 6 h e pausa de 15 min quando o site bloqueia (sem tentar contornar);
- * - paginação até o teto da extensão;
- * - anúncio cru → `Listing` (total, tipo, comodidades, ids) e posição no mapa
- *   (coordenada do site; senão endereço geocodificado ou o centro do bairro, marcada como aproximada).
+ * Shared engine for the extensions: everything that is the same on any site.
+ * - robots.txt honored before every page;
+ * - per-site pacing, 6 h cache and a 15 min pause when the site blocks (no attempt to get around it);
+ * - pagination up to the extension's cap;
+ * - raw listing → `Listing` (total, type, amenities, ids) and map position
+ *   (the site's coordinates; otherwise a geocoded address or the neighborhood center, marked as approximate).
  */
 
 const BLOCK_COOLDOWN_MS = 15 * 60_000;
@@ -22,23 +23,22 @@ const blockedUntil = new Map<string, number>();
 
 export class RobotsDisallowedError extends SourceBlockedError {}
 
-/** Página de desafio (Cloudflare, captcha): o site barrou robôs. */
+/** Challenge page (Cloudflare, captcha): the site blocked robots. */
 export const isChallengePage = (html: string) =>
   /<title>\s*(Just a moment|Attention Required|Access denied|Acesso negado)/i.test(html) ||
   /cf-chl-|challenges\.cloudflare\.com\/turnstile|g-recaptcha"|hcaptcha\.com\/1\/api/i.test(html.slice(0, 20_000));
 
-/** Baixa uma página para a extensão (robots.txt, ritmo, cache e bloqueio). 404 vira página vazia. */
+/** Downloads a page for an extension (robots.txt, pacing, cache and blocking). 404 becomes an empty page. */
 export async function fetchPage(
   ext: Pick<SiteExtension, "id" | "label" | "minIntervalMs">,
   url: string,
 ): Promise<string> {
   const robots = await robotsStatus(url);
-  if (robots === "deny")
-    throw new RobotsDisallowedError("o site pede para robôs não lerem essa página (robots.txt); respeitando");
-  if (robots === "erro") throw new Error("o site não respondeu");
+  if (robots === "deny") throw new RobotsDisallowedError(t.sources.robotsPage);
+  if (robots === "error") throw new Error(t.sources.siteDown);
   return cached(`site-${ext.id}`, url, 6 * HOUR, async () => {
     if (Date.now() < (blockedUntil.get(ext.id) ?? 0)) {
-      throw new SourceBlockedError("o site bloqueou a leitura automática há pouco; tente de novo em alguns minutos");
+      throw new SourceBlockedError(t.sources.blockedRecently);
     }
     const res = await httpFetch(url, {
       minIntervalMs: ext.minIntervalMs ?? 1500,
@@ -51,17 +51,17 @@ export async function fetchPage(
       },
     });
     const body = res.status === 404 ? "" : await res.text();
-    // Bloqueio não vai para o cache: é passageiro e não quer dizer "não tem anúncio".
+    // A block is not cached: it is temporary and does not mean "no listings".
     if (res.status === 403 || res.status === 429 || isChallengePage(body)) {
       blockedUntil.set(ext.id, Date.now() + BLOCK_COOLDOWN_MS);
-      throw new SourceBlockedError(`o site bloqueou a leitura automática (HTTP ${res.status}); tente mais tarde`);
+      throw new SourceBlockedError(t.sources.blocked(res.status));
     }
     if (!res.ok && res.status !== 404) throw new Error(`HTTP ${res.status}`);
     return body;
   });
 }
 
-/** Percorre as páginas da busca e junta os anúncios (sem repetir). */
+/** Walks the search pages and collects listings (without repeats). */
 export async function collectRaw(
   ext: SiteExtension,
   ctx: Omit<PageCtx, "page">,
@@ -74,7 +74,7 @@ export async function collectRaw(
     try {
       body = await fetchPage(ext, url);
     } catch (e) {
-      // Página seguinte proibida pelo robots.txt: fica com o que já leu.
+      // Next page disallowed by robots.txt: keep what was read so far.
       if (e instanceof RobotsDisallowedError && page > 1) break;
       throw e;
     }
@@ -91,13 +91,13 @@ export async function collectRaw(
   return [...seen.values()];
 }
 
-// ---------- posição no mapa ----------
+// ---------- map position ----------
 
 const GENERIC =
   /^(jardim|jd|parque|pq|vila|vl|chacara|residencial|conjunto|nucleo|loteamento|condominio|cidade|bairro|recanto|sitio)-/;
 const core = (s: string) => slugify(s).replace(GENERIC, "");
 
-/** "Taquaral" casa com "Parque Taquaral"; "Cambuí" com "cambui". */
+/** "Taquaral" matches "Parque Taquaral"; "Cambuí" matches "cambui". */
 export function sameName(a: string | undefined, b: string | undefined): boolean {
   if (!a || !b) return false;
   const x = core(a);
@@ -105,7 +105,7 @@ export function sameName(a: string | undefined, b: string | undefined): boolean 
   return !!x && !!y && (x === y || (x.length >= 5 && y.includes(x)) || (y.length >= 5 && x.includes(y)));
 }
 
-/** Posição estável perto do centro da região quando o endereço não é encontrado. */
+/** Stable position near the region center when the address is not found. */
 export function jitter(center: LatLng, seed: string): LatLng {
   let h = 0;
   for (const ch of seed) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
@@ -114,13 +114,13 @@ export function jitter(center: LatLng, seed: string): LatLng {
   return { lat: center.lat + r * Math.sin(ang), lng: center.lng + r * Math.cos(ang) };
 }
 
-/** Sala, galpão, terreno…: não é moradia. */
+/** Office, warehouse, land…: not a home (Portuguese listing words). */
 const COMMERCIAL =
   /\b(salas?|sal[aã]o|galp[aã]o|barrac[aã]o|terrenos?|lotes?|lojas?|ponto comercial|pr[eé]dio|dep[oó]sito|escrit[oó]rio|consult[oó]rio|ch[aá]cara|s[ií]tio|fazenda|box|vaga de garagem)\b/i;
 
 export function isHome(r: Pick<RawListing, "typeLabel" | "title">): boolean {
   const label = r.typeLabel ?? r.title?.split(/\s[-|–,]\s|\spara\s/i)[0] ?? "";
-  return !(normalizeType(label) === "outro" && COMMERCIAL.test(label));
+  return !(normalizeType(label) === "other" && COMMERCIAL.test(label));
 }
 
 export interface SourceMeta {
@@ -128,10 +128,10 @@ export interface SourceMeta {
   label: string;
 }
 
-/** Anúncio cru → `Listing`. */
+/** Raw listing → `Listing`. */
 export function toListing(r: RawListing, src: SourceMeta, pos: LatLng, approx: boolean): Listing {
   const total = r.total ?? r.rent + (r.condo ?? 0) + (r.iptu ?? 0);
-  const typeLabel = r.typeLabel ?? r.title?.split(/\s[-|–,]\s|\spara\s|\scom\s/i)[0]?.trim() ?? "Imóvel";
+  const typeLabel = r.typeLabel ?? r.title?.split(/\s[-|–,]\s|\spara\s|\scom\s/i)[0]?.trim() ?? t.links.property;
   const found = detectAmenities([r.title, r.description].filter(Boolean).join(" "));
   return {
     id: `${src.id}:${r.id}`,
@@ -156,12 +156,12 @@ export function toListing(r: RawListing, src: SourceMeta, pos: LatLng, approx: b
     lng: pos.lng,
     approxLocation: approx,
     image: r.image,
-    // Só a descrição completa permite dizer "não tem": sem ela, o que não aparece fica "sem informação".
+    // Only the full description allows saying "does not have": without it, anything missing stays "unknown".
     amenities: found.length ? found : undefined,
   };
 }
 
-/** Coloca os anúncios crus no mapa, dentro da região pedida. */
+/** Places raw listings on the map, within the requested region. */
 export async function locate(
   raws: RawListing[],
   ext: Pick<SiteExtension, "scope">,
@@ -174,12 +174,12 @@ export async function locate(
   const out: Listing[] = [];
   for (const r of raws) {
     if (!isHome(r)) continue;
-    if (r.cityName && !sameName(r.cityName, city.name)) continue; // outra cidade
+    if (r.cityName && !sameName(r.cityName, city.name)) continue; // another city
     if (r.geo) {
-      out.push(toListing(r, src, r.geo, false)); // o servidor tira os de fora da região
+      out.push(toListing(r, src, r.geo, false)); // the server drops those outside the region
       continue;
     }
-    // Sem coordenada: na busca da cidade inteira, só fica o que diz ser deste bairro.
+    // No coordinates: in a whole-city search, keep only those claiming to be in this neighborhood.
     if (ext.scope === "city" && !sameName(r.neighbourhood, region.name)) continue;
     let pos: LatLng | null = null;
     if (r.street) {
@@ -192,7 +192,7 @@ export async function locate(
   return out;
 }
 
-/** Transforma uma extensão numa fonte de anúncios que o servidor sabe usar. */
+/** Turns an extension into a listing source the server knows how to use. */
 export function extensionSource(ext: SiteExtension, meta: Partial<SourceMeta> & { site?: string } = {}): SourceAdapter {
   const src: SourceMeta = { id: meta.id ?? ext.id, label: meta.label ?? ext.label };
   return {
@@ -202,7 +202,7 @@ export function extensionSource(ext: SiteExtension, meta: Partial<SourceMeta> & 
       const ctx = { city: args.city, region: args.region, filters: args.filters, site: meta.site };
       const raws = await collectRaw(ext, ctx, ext.scope === "city" ? Infinity : args.max);
       const listings = await locate(raws, ext, args, src);
-      args.log(`${src.label} · ${args.region.name}: ${listings.length} anúncios`);
+      args.log(t.sources.listingsFound(src.label, args.region.name, listings.length));
       return listings;
     },
   };

@@ -1,28 +1,30 @@
-import type { PropertyType } from "@homematch/contracts";
+import type { AmenityId, PropertyType } from "@homematch/contracts";
 
-// Ordem = desempate quando dois casam na mesma posição ("casa de condomínio" antes de "casa").
+// The patterns below match Brazilian listing text (Portuguese words), which is the data being parsed.
+
+// Order = tie-break when two match at the same position ("casa de condomínio" before "casa").
 const TYPE_PATTERNS: [PropertyType, RegExp][] = [
   ["studio", /studio|kitnet|kitchenette|loft|quitinete/],
-  ["casa_condominio", /casa\s*(?:de|em)?\s*(?:condominio|vila)|casacondominio|sobrado\s*(?:de|em)\s*condominio/],
-  ["apartamento", /apartamento|apartment|cobertura|flat|duplex|triplex|garden/],
-  ["casa", /casa|sobrado|residence|house/],
+  ["condo_house", /casa\s*(?:de|em)?\s*(?:condominio|vila)|casacondominio|sobrado\s*(?:de|em)\s*condominio/],
+  ["apartment", /apartamento|apartment|cobertura|flat|duplex|triplex|garden/],
+  ["house", /casa|sobrado|residence|house/],
 ];
 
 /**
- * Converte o rótulo de tipo de cada site para um tipo comum. Vale a palavra que aparece primeiro:
- * em "Apartamento … na Vila Itapura, condomínio R$ 600" o tipo é apartamento, não casa de condomínio.
+ * Maps each site's type label to a common type. The word that appears first wins:
+ * in "Apartamento … na Vila Itapura, condomínio R$ 600" the type is apartment, not condo house.
  */
 export function normalizeType(label: string): PropertyType {
-  const s = label.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const s = label.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
   let best: { type: PropertyType; at: number } | null = null;
   for (const [type, re] of TYPE_PATTERNS) {
     const at = s.search(re);
     if (at >= 0 && (!best || at < best.at)) best = { type, at };
   }
-  return best?.type ?? "outro";
+  return best?.type ?? "other";
 }
 
-/** "R$ 7.000" → 7000; "1.605,50" → 1605.5. undefined se não houver número. */
+/** "R$ 7.000" → 7000; "1.605,50" → 1605.5 (Brazilian format). undefined without a number. */
 export function parseBRL(s: string | undefined | null): number | undefined {
   if (!s) return undefined;
   const m = s.match(/\d[\d.]*(?:,\d+)?/);
@@ -31,7 +33,7 @@ export function parseBRL(s: string | undefined | null): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-/** Primeiro inteiro do texto ("Quantidade de quartos 2" → 2; "82-90 m²" → 82). */
+/** First integer in the text ("Quantidade de quartos 2" → 2; "82-90 m²" → 82). */
 export function firstInt(s: string | undefined | null): number | undefined {
   const m = s?.match(/\d+/);
   return m ? Number(m[0]) : undefined;
@@ -40,29 +42,29 @@ export function firstInt(s: string | undefined | null): number | undefined {
 export function slugify(s: string): string {
   return s
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/\p{M}/gu, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
 }
 
-/** Comodidades que dá para tirar do texto do anúncio (ids estáveis, usados nos filtros do mapa). */
-export const AMENITY_PATTERNS: [string, RegExp][] = [
+/** Amenities that can be read from the listing text (stable ids, used by the map filters). */
+export const AMENITY_PATTERNS: [AmenityId, RegExp][] = [
   [
-    "armario_cozinha",
+    "kitchen_cabinets",
     /\b(cozinha (americana )?(planejada|com (armarios?|gabinetes?)|mobiliada)|armarios? (planejados? )?(na|da|de|em) cozinha|gabinetes? (na|da|de) cozinha)\b/,
   ],
   [
-    "armario_quarto",
+    "wardrobe",
     /\b(guarda[- ]?roupas?|armarios? embutidos?|closets?|armarios? (planejados? )?(nos?|nas?|dos?|das?|em) (dois |tres )?(quartos?|dormitorios?|suites?)|(quartos?|dormitorios?|suites?) (planejad[oa]s?|com armarios?))\b/,
   ],
-  ["pia", /\b(pias?|bancadas?|cubas?)\b/],
-  ["mobiliado", /\b(semi[- ]?)?mobiliad[oa]s?\b/],
+  ["sink", /\b(pias?|bancadas?|cubas?)\b/],
+  ["furnished", /\b(semi[- ]?)?mobiliad[oa]s?\b/],
 ];
 
-/** Texto do anúncio (título, descrição, lista de itens) → ids de comodidades, sem duplicar. */
-export function detectAmenities(text: string | undefined | null): string[] {
+/** Listing text (title, description, item list) → amenity ids, without duplicates. */
+export function detectAmenities(text: string | undefined | null): AmenityId[] {
   if (!text) return [];
-  const s = text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ");
+  const s = text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/\s+/g, " ");
   return AMENITY_PATTERNS.filter(([, re]) => re.test(s)).map(([id]) => id);
 }

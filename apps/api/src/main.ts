@@ -4,7 +4,7 @@ import { loadEnv } from "./env.js";
 const env = loadEnv();
 const app = await buildApp(env);
 
-// Encerra limpo (Ctrl+C, parada do container): termina as respostas em andamento antes de sair.
+// Clean shutdown (Ctrl+C, container stop): finish in-flight responses before exiting.
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.once(sig, () => {
     void app.close().then(() => process.exit(0));

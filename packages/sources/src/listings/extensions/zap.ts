@@ -3,12 +3,12 @@ import type { RawListing, SiteExtension } from "../core/types.js";
 import { parseVivaReal } from "../vivareal.js";
 
 /**
- * ZAP Imóveis: mesmo grupo e mesma plataforma do VivaReal (os cards têm a mesma marcação), então o
- * parse é o do VivaReal; só a URL muda. Aceita preço máximo e página na URL (permitidos no robots.txt).
+ * ZAP Imóveis: same group and platform as VivaReal (cards share the markup), so VivaReal's parser is used; only
+ * the URL changes. Accepts max price and page in the URL (allowed by robots.txt).
  */
 const SITE = "https://www.zapimoveis.com.br";
 
-/** Parse puro de uma página de busca do ZAP. */
+/** Pure parsing of a ZAP search page. */
 export function parseZap(html: string): RawListing[] {
   return parseVivaReal(html).map((c) => {
     const [neighbourhood, cityName] = (c.location ?? "").split(",").map((s) => s.trim());
@@ -44,7 +44,7 @@ export const zapImoveis: SiteExtension = {
   url({ city, region, filters, page }) {
     if (!city.stateCode) return null;
     const q = new URLSearchParams();
-    // O ZAP filtra pelo aluguel; no modo "total" o teto do aluguel é o próprio teto (o servidor refina).
+    // ZAP filters by rent; in "total" mode the rent cap is the cap itself (the server refines).
     if (filters?.priceMax) q.set("precoMaximo", String(filters.priceMax));
     if (page > 1) q.set("pagina", String(page));
     const qs = q.toString();

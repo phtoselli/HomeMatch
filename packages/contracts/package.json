@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
+    "@homematch/i18n": "*",
     "zod": "^4.6.7"
   }
 }

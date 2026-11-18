@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "license": "PolyForm-Noncommercial-1.0.0",
-  "description": "Mapa para achar aluguel: regiões perto do trabalho (transporte público), com o que você precisa por perto, e imóveis raspados das imobiliárias.",
+  "description": "Rental search map: regions near work by public transit, with what you need nearby, and listings from portals and local agencies.",
   "type": "module",
   "engines": {
     "node": ">=22"

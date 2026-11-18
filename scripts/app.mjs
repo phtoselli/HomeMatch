@@ -1,5 +1,5 @@
-// Abre o HomeMatch para uso: monta o mapa, sobe o servidor e abre o navegador.
-// Uso: `npm run app` (ou dois cliques em HomeMatch.cmd no Windows).
+// Starts HomeMatch for everyday use: builds the map, starts the server and opens the browser.
+// Usage: `npm run app` (or double-click HomeMatch.cmd on Windows).
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -27,17 +27,17 @@ function openBrowser() {
         ? ["open", [url]]
         : ["xdg-open", [url]];
   spawn(cmd, args, { stdio: "ignore", detached: true }).unref();
-  console.log(`\nHomeMatch aberto em ${url}\nPara fechar, feche esta janela (ou Ctrl+C).\n`);
+  console.log(`\nHomeMatch is running at ${url}\nTo stop it, close this window (or press Ctrl+C).\n`);
 }
 
 if (!existsSync(bin("vite/bin/vite.js")) || !existsSync(bin("tsx/dist/cli.mjs"))) {
-  console.log("Instalando dependências (só na primeira vez)…");
+  console.log("Installing dependencies (first run only)…");
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
   const r = spawnSync(npm, ["install"], { cwd: root, stdio: "inherit", shell: process.platform === "win32" });
   if (r.status !== 0) process.exit(r.status ?? 1);
 }
 
-console.log("Montando o mapa…");
+console.log("Building the map…");
 const build = spawnSync(process.execPath, [bin("vite/bin/vite.js"), "build", "--logLevel", "warn"], {
   cwd: join(root, "apps", "web"),
   stdio: "inherit",
@@ -45,20 +45,20 @@ const build = spawnSync(process.execPath, [bin("vite/bin/vite.js"), "build", "--
 if (build.status !== 0) process.exit(build.status ?? 1);
 
 if (await up()) {
-  // Já tem um servidor na porta (ex.: o `npm run dev`). Se ele entrega o mapa, é só abrir.
+  // A server is already on the port (e.g. `npm run dev`). If it serves the map, just open it.
   const page = await fetch(`http://127.0.0.1:${port}/`).catch(() => null);
   if (page?.ok) {
-    console.log("O servidor já está rodando.");
+    console.log("The server is already running.");
     openBrowser();
   } else {
     url = "http://localhost:5173";
-    console.log(`A porta ${port} está com o modo de desenvolvimento (npm run dev).`);
+    console.log(`Port ${port} is running in development mode (npm run dev).`);
     openBrowser();
   }
   process.exit(0);
 }
 
-console.log("Subindo o servidor…");
+console.log("Starting the server…");
 const server = spawn(process.execPath, [bin("tsx/dist/cli.mjs"), "apps/api/src/main.ts"], {
   cwd: root,
   stdio: ["ignore", "ignore", "inherit"], // log de cada requisição fica de fora; erros aparecem
@@ -69,4 +69,4 @@ for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => server.kill());
 
 for (let i = 0; i < 60 && !(await up()); i++) await new Promise((r) => setTimeout(r, 500));
 if (await up()) openBrowser();
-else console.error(`O servidor não respondeu em ${url}. Veja os erros acima.`);
+else console.error(`The server did not answer at ${url}. See the errors above.`);

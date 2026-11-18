@@ -1,76 +1,88 @@
 # CLAUDE.md
 
-Guia para o Claude Code neste repositório. Visão geral e limitações no [README](README.md).
+Guide for Claude Code in this repository. Overview and limitations in the [README](README.md).
 
-## Estrutura
+## Structure
 
-Monorepo (npm workspaces). Plano completo em [docs/arquitetura.md](docs/arquitetura.md).
+npm workspaces monorepo. Full design in [docs/architecture.md](docs/architecture.md).
 
-- `packages/contracts`: schemas zod da API e os tipos derivados (`z.infer`). Mudou o contrato da API, mude aqui:
-  a validação das rotas e os tipos do app saem do mesmo schema.
-- `packages/domain`: regras puras (geo, modelo de trajeto, nota da grade, filtros, "o que não bate", horários).
-  Sem rede, disco, React nem zod. Roda igual na API, no navegador e nos testes.
-- `packages/sources`: tudo que vem de fora. `http.ts` (ritmo, cache em `DATA_DIR`), `osm/`, `operators/` (EMDEC),
-  `intercity.ts` (linhas intermunicipais do OSM entre duas cidades + terminais), `listings/`, `links.ts`. A API só
-  importa pelo `index.ts` do pacote.
-  - `listings/core/engine.ts` é o motor comum (robots.txt, ritmo, cache, bloqueio, paginação, posição no mapa);
-    `core/schemaorg.ts` lê anúncios em schema.org (JSON-LD) de qualquer site.
-  - `listings/extensions/<site>.ts` tem só o particular de cada site: `url()` da busca + `parse()` puro (contrato em
-    `core/types.ts`). Registre em `listings/index.ts` e em `portals.ts`.
-  - `listings/discovery.ts` acha as imobiliárias da cidade (OSM `office=estate_agent` com site), reconhece a plataforma
-    e lê as que publicam schema.org pela extensão genérica (`extensions/agency.ts`, fonte `site:<host>`).
-- `apps/api`: Fastify. `app.ts` monta (testes usam `app.inject`), `main.ts` escuta, `vercel.ts` é a mesma API como
-  função da Vercel (empacotada por `scripts/build-vercel.mjs`), `env.ts` valida a configuração,
-  `routes/` só valida e chama, `services/` orquestra fontes + domínio (`commute.ts`: rede de transporte da análise,
-  na mesma cidade ou intermunicipal), `plugins/` (erros, streaming).
-  Respostas longas (`/api/analyze`, `/api/listings`, `/api/links`) são **NDJSON** em streaming
-  (`progress` / `warning` / `partial` / `result` / `error`).
-- `apps/web`: React 18 + react-leaflet 4. Estrutura completa em [docs/arquitetura.md](docs/arquitetura.md#5-app-react).
-  - `features/<assunto>/` (search, results, map, transit, links, favorites): `components/`, `hooks/`, `model/`
-    (stores Zustand), `lib/` e um `index.ts` com a API pública. De fora, só `@/features/<assunto>`; dentro, caminho
-    relativo. `app/` compõe a tela.
-  - `shared/ui`: peças reutilizáveis sem regra de negócio (Modal, Switch, Segmented, Spinner, ExternalLink, Photo,
-    Icon…), com CSS Modules. `shared/api`: cliente HTTP e leituras com TanStack Query. `shared/lib/persist.ts`:
-    preferências no localStorage (chaves `mapa-aluguel:<nome>`, mantidas entre versões). `shared/` não importa features.
-  - Camadas do mapa: um arquivo por camada em `features/map/layers/`, desenhadas de forma imperativa com `useLayer`,
-    em canvas, por desempenho.
-  - Alias `@/` = `apps/web/src` (Vite, tsconfig e Vitest).
+- **Language:** code, comments, tests and docs in English. UI text in Brazilian Portuguese, only in the typed catalog
+  `packages/i18n/src/locales/pt-BR` (read as `t.<area>` / `t.ui.<screen>`). Never hard-code UI text in components.
+- `packages/contracts`: zod schemas of the API and the derived types (`z.infer`). If the API contract changes, change
+  it here: route validation and app types come from the same schema.
+- `packages/domain`: pure rules (geo, commute model, grid score and levels, filters, "what does not match",
+  timetables, legacy id migration in `storage/legacy.ts`). No network, disk, React or zod. Runs the same in the API,
+  the browser and the tests.
+- `packages/i18n`: text catalogs, no dependencies. Messages that take values are functions.
+- `packages/sources`: everything from outside. `http.ts` (pacing, cache in `DATA_DIR`), `osm/`, `operators/` (EMDEC),
+  `intercity.ts` (OSM intercity lines between two cities + terminals), `listings/`, `links.ts`. The API imports only
+  through the package's `index.ts`.
+  - `listings/core/engine.ts` is the shared engine (robots.txt, pacing, cache, blocking, pagination, map position);
+    `core/schemaorg.ts` reads schema.org (JSON-LD) listings from any site.
+  - `listings/extensions/<site>.ts` holds only what is specific to each site: the search `url()` + a pure `parse()`
+    (contract in `core/types.ts`). Register in `listings/index.ts` and `portals.ts`.
+  - `listings/discovery.ts` finds the city's agencies (OSM `office=estate_agent` with a website), recognizes the
+    platform and reads the ones that publish schema.org through the generic extension (`extensions/agency.ts`,
+    source `site:<host>`).
+- `apps/api`: Fastify. `app.ts` builds it (tests use `app.inject`), `main.ts` listens, `vercel.ts` is the same API as
+  a Vercel function (bundled by `scripts/build-vercel.mjs`), `env.ts` validates configuration, `routes/` only
+  validate and call, `services/` orchestrate sources + domain (`commute.ts`: the analysis' transit network, same city
+  or intercity), `plugins/` (errors, streaming). Long answers (`/api/analyze`, `/api/listings`, `/api/links`) are
+  streamed **NDJSON** (`progress` / `warning` / `partial` / `result` / `error`).
+- `apps/web`: React 18 + react-leaflet 4, **feature-based + Atomic Design** (details in
+  [docs/architecture.md](docs/architecture.md#5-react-app)).
+  - `features/<topic>/` (search, results, map, transit, links, favorites, report): `components/{atoms,molecules,
+    organisms}/`, `hooks/`, `model/` (Zustand stores), `lib/` and an `index.ts` with the public API. From outside,
+    only `@/features/<topic>`; inside, relative paths.
+  - `app/`: `organisms/` (TopBar), `templates/` (MapLayout, slots only), `pages/` (HomePage wires the stores),
+    `model/shell.ts`.
+  - `shared/ui/{atoms,molecules,organisms}`: reusable pieces without business rules, with CSS Modules.
+    `shared/api`: HTTP client and TanStack Query reads. `shared/lib/persist.ts`: preferences in localStorage (keys
+    `homematch:<name>`; old `mapa-aluguel:` keys are migrated once). `shared/` does not import features.
+  - Atomic levels only build on lower ones (atoms ↛ molecules/organisms; molecules ↛ organisms).
+  - Map layers: one file per layer in `features/map/layers/`, drawn imperatively with `useLayer`, on canvas.
+  - `features/report`: "Export PDF" (search profile for an agency; jsPDF loaded on demand; no listings or links).
+  - Alias `@/` = `apps/web/src` (Vite, tsconfig and Vitest).
 
-## Regras
+## Rules
 
-- **Parse puro e testado.** Toda extração de site fica numa função `(html|json) => dados` com teste e
-  fixture real em `packages/sources/test/fixtures/`. O `search`/`resolve` só busca e chama o parse.
-- **Toda chamada externa passa por `http.ts`** (`httpFetch`/`cached`): ritmo por host, novas tentativas e cache
-  em `data/cache/` (na Vercel, também no Runtime Cache para o que vale 1 dia ou mais). Nominatim: no máximo 1 req/s e User-Agent do app (`APP_UA`).
-- **Nada de contornar bloqueio.** Se um site exigir captcha/login ou bloquear, o raspador registra o aviso e
-  segue com as outras fontes. Não adicionar plugins de "stealth" nem rotação de IP. Extensões leem só páginas
-  públicas de busca (nada de API interna do site com Origin/Referer forjados) e o motor respeita o robots.txt.
-- **Só rede pública:** `net.ts` confere a URL e o IP na conexão de toda chamada do `httpFetch` (links colados e
-  sites vindos do OSM são de terceiros). Não chame `fetch` direto nem desligue o `publicDispatcher`.
-- **Link de fora vira `href`/`src` só por `safeExternalUrl`** (domain): no app, `<ExternalLink>` e `<Photo>`.
-  Texto de fora em HTML do Leaflet passa por `esc` (`features/map/lib/leaflet.ts`).
-- No app e no domínio, `@homematch/contracts` só com `import type`; valores em `@homematch/contracts/constants`.
-- **Dependências entre pacotes** seguem as setas da arquitetura; o ESLint (`no-restricted-imports`) barra o resto
-  (ex.: `domain` não importa `sources`, o app não importa `sources` nem Node).
-- Regra nova que vale para servidor e app vai para `domain`, com teste. Componente que se repete vai para `shared/ui`.
-- ESM + tsx: imports com extensão `.js` nos pacotes e na API. No Windows use `npm.cmd`/`npx.cmd` se o PowerShell bloquear `npm`.
-- `data/` é cache de conteúdo de terceiros e não vai para o git.
-- Sem banco de dados: o que é da pessoa fica no localStorage; o servidor lê os sites na hora, com cache em arquivo
-  (`/tmp` na Vercel). Nada de estado no servidor que precise sobreviver a um deploy.
+- **Pure, tested parsing.** Every site extraction is a `(html|json) => data` function with a test and a real
+  fixture in `packages/sources/test/fixtures/`. `search`/`resolve` only fetch and call the parser.
+- **Every external call goes through `http.ts`** (`httpFetch`/`cached`): per-host pacing, retries and cache in
+  `data/cache/` (on Vercel, also in the Runtime Cache for what lasts a day or more). Nominatim: at most 1 req/s with
+  the app's User-Agent (`APP_UA`).
+- **No working around blocks.** If a site requires a captcha/login or blocks us, the scraper logs a warning and moves
+  on. No "stealth" plugins or IP rotation. Extensions read only public search pages (no internal site APIs with
+  forged Origin/Referer) and the engine respects robots.txt.
+- **Public network only:** `net.ts` checks the URL and the IP at connection time for every `httpFetch` call (pasted
+  links and sites from OSM are third-party). Never call `fetch` directly or disable `publicDispatcher`.
+- **Outside links become `href`/`src` only through `safeExternalUrl`** (domain): in the app, `<ExternalLink>` and
+  `<Photo>`. Outside text in Leaflet HTML goes through `esc` (`features/map/lib/leaflet.ts`).
+- In the app and the domain, `@homematch/contracts` only with `import type`; values from
+  `@homematch/contracts/constants`.
+- **Package dependencies** follow the architecture arrows; ESLint (`no-restricted-imports`) blocks the rest (e.g.
+  `domain` does not import `sources`, the app does not import `sources` or Node).
+- A new rule shared by server and app goes to `domain`, with a test. A repeated component goes to `shared/ui`, at the
+  right atomic level.
+- ESM + tsx: `.js` extensions in imports in the packages and the API. On Windows use `npm.cmd`/`npx.cmd` if
+  PowerShell blocks `npm`.
+- `data/` is a cache of third-party content and does not go into git.
+- No database: user data stays in localStorage; the server reads the sites on demand, with a file cache (`/tmp` on
+  Vercel). No server state that must survive a deploy.
 
-## Comandos
+## Commands
 
 ```bash
 npm run dev          # API + Vite (proxy ^/api/ → :3333)
-npm test             # Vitest (todos os pacotes)
-npm run typecheck    # tsc em cada pacote
+npm test             # Vitest (all packages)
+npm run typecheck    # tsc in each package
 npm run lint
 npm run format       # Prettier
-npm run check        # o que o CI roda: lint, tipos, testes e build
-npm run build:vercel   # o que a Vercel roda a cada push na main (.vercel/output)
-npm run preview:vercel # serve esse build no computador com os cabeçalhos da Vercel (API local em :3333)
+npm run check        # what CI runs: lint, types, tests and build
+npm run build:vercel   # what Vercel runs on every push to main (.vercel/output)
+npm run preview:vercel # serves that build locally with Vercel's headers (local API on :3333)
 ```
 
-Produção: projeto `home-match` na Vercel (https://home-match-delta.vercel.app), publica a cada push na `main`.
-A pasta está ligada pela CLI (`.vercel/project.json`); no PowerShell use `vercel.cmd` (`vercel.cmd ls`,
+Production: Vercel project `home-match` (https://home-match-delta.vercel.app), deploys on every push to `main`.
+The folder is linked through the CLI (`.vercel/project.json`); in PowerShell use `vercel.cmd` (`vercel.cmd ls`,
 `vercel.cmd logs <url>`, `vercel.cmd env ls`).

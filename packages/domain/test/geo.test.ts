@@ -2,19 +2,19 @@ import { describe, expect, it } from "vitest";
 import { PointIndex, distance, gridCenters, inMultiPolygon, padBBox } from "../src/geo.js";
 
 describe("geo", () => {
-  it("distance ~ 1 km por 0.009 grau de latitude", () => {
+  it("distance ~ 1 km per 0.009 degree of latitude", () => {
     const d = distance({ lat: -23.55, lng: -46.63 }, { lat: -23.559, lng: -46.63 });
     expect(d).toBeGreaterThan(990);
     expect(d).toBeLessThan(1010);
   });
 
-  it("gridCenters cobre a bbox com o tamanho de célula pedido", () => {
+  it("gridCenters covers the bbox with the requested cell size", () => {
     const b = padBBox({ south: -23.55, north: -23.55, west: -46.63, east: -46.63 }, 1000); // 2x2 km
     const pts = gridCenters(b, 500);
     expect(pts.length).toBe(16);
   });
 
-  it("PointIndex.nearest acha o mais próximo dentro do raio", () => {
+  it("PointIndex.nearest finds the closest point within the radius", () => {
     const pts = [
       { lat: -23.55, lng: -46.63, id: "a" },
       { lat: -23.56, lng: -46.63, id: "b" },
@@ -26,7 +26,7 @@ describe("geo", () => {
     expect(idx.within({ lat: -23.555, lng: -46.63 }, 700).length).toBe(2);
   });
 
-  it("inMultiPolygon respeita buracos", () => {
+  it("inMultiPolygon respects holes", () => {
     const outer: [number, number][] = [
       [0, 0],
       [10, 0],

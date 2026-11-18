@@ -2,20 +2,20 @@ import type { LatLng } from "@homematch/contracts";
 import type { SearchArgs } from "../types.js";
 
 /**
- * Um anúncio como o site mostra, antes de virar `Listing`. Cada extensão só precisa preencher isto;
- * o motor (engine.ts) cuida do resto: total, tipo, comodidades, posição no mapa e ids.
+ * A listing as the site shows it, before it becomes a `Listing`. Each extension only fills this in;
+ * the engine (engine.ts) does the rest: total, type, amenities, map position and ids.
  */
 export interface RawListing {
-  /** Id no site (o motor põe o prefixo da fonte). */
+  /** Id on the site (the engine adds the source prefix). */
   id: string;
   url: string;
   title?: string;
-  /** "Apartamento", "Casa de condomínio"… (sem isso, o tipo sai do título). */
+  /** "Apartamento", "Casa de condomínio"… as the site says (without it, the type comes from the title). */
   typeLabel?: string;
   rent: number;
   condo?: number;
   iptu?: number;
-  /** Total do mês quando o site informa; senão o motor soma aluguel + condomínio + IPTU. */
+  /** Monthly total when the site gives it; otherwise the engine adds rent + condo fee + tax. */
   total?: number;
   area?: number;
   bedrooms?: number;
@@ -23,48 +23,48 @@ export interface RawListing {
   parking?: number;
   street?: string;
   neighbourhood?: string;
-  /** Cidade do imóvel, quando o site informa (para descartar os de outras cidades). */
+  /** The property's city, when the site says (to drop listings from other cities). */
   cityName?: string;
   geo?: LatLng;
   image?: string;
-  /** Texto do anúncio (para achar armário, pia…). */
+  /** Listing text (to detect cabinets, sink…). */
   description?: string;
-  /** Imobiliária que anuncia (portais). */
+  /** Advertising agency (portals). */
   agency?: string;
 }
 
-/** O que a extensão recebe para montar a URL de uma página de busca. */
+/** What an extension receives to build the URL of a search page. */
 export interface PageCtx extends Omit<SearchArgs, "log" | "max"> {
   /** 1, 2, 3… */
   page: number;
-  /** Site da imobiliária (extensões genéricas ou de plataforma). */
+  /** Agency website (generic or platform extensions). */
   site?: string;
 }
 
 /**
- * Extensão de um site: só o que é particular dele (URL da busca e leitura da página).
- * Busca, ritmo, cache, robots.txt, bloqueios, paginação e posição no mapa ficam no motor.
+ * A site extension: only what is specific to it (search URL and page parsing).
+ * Fetching, pacing, cache, robots.txt, blocks, pagination and map position live in the engine.
  */
 export interface SiteExtension {
   id: string;
   label: string;
-  /** Página inicial (para robots.txt e para mostrar na lista de fontes). */
+  /** Home page (for robots.txt and to show in the source list). */
   home: string;
   /**
-   * "region": o site busca por bairro (uma busca por região);
-   * "city": o site só lista a cidade inteira; o motor baixa uma vez (cache) e separa por região.
+   * "region": the site searches by neighborhood (one search per region);
+   * "city": the site only lists the whole city; the engine downloads it once (cached) and splits by region.
    */
   scope: "region" | "city";
-  /** Anúncios por página (página com menos que isso = última). */
+  /** Listings per page (a page with fewer = the last one). */
   perPage: number;
-  /** Teto de páginas por busca (respeitar o site). */
+  /** Page cap per search (be gentle with the site). */
   maxPages: number;
-  /** Intervalo mínimo entre páginas do mesmo site. */
+  /** Minimum interval between pages of the same site. */
   minIntervalMs?: number;
-  /** URL da página `ctx.page` da busca, ou null se não houver (bairro desconhecido etc.). */
+  /** URL of search page `ctx.page`, or null when there is none (unknown neighborhood etc.). */
   url(ctx: PageCtx): string | null;
-  /** Próxima página a partir da atual (quando o site usa links "próxima" em vez de número). */
+  /** Next page from the current one (when the site uses "next" links instead of numbers). */
   next?(body: string, pageUrl: string, ctx: PageCtx): string | null;
-  /** Parse puro da página (testado com fixture real em tests/fixtures). */
+  /** Pure page parsing (tested with a real fixture in test/fixtures). */
   parse(body: string, pageUrl: string): RawListing[];
 }

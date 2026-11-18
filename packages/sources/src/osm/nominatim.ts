@@ -1,11 +1,13 @@
 import type { BBox, City, LatLng, PlaceResult, Polygon } from "@homematch/contracts";
 import { padBBox } from "@homematch/domain";
 import { DAY, cached, httpJson } from "../http.js";
+import { t } from "@homematch/i18n";
 
-// Política do Nominatim: no máximo 1 requisição/s e User-Agent identificando o app.
+// Nominatim policy: at most 1 request/s and a User-Agent identifying the app.
 const BASE = "https://nominatim.openstreetmap.org";
 const OPTS = { minIntervalMs: 1100, timeoutMs: 30_000, headers: { "Accept-Language": "pt-BR" } };
 
+/** Brazilian state names as Nominatim returns them → two-letter codes. */
 const UF: Record<string, string> = {
   Acre: "AC",
   Alagoas: "AL",
@@ -84,8 +86,8 @@ export async function searchCities(q: string): Promise<PlaceResult[]> {
   let rows = await cached("nominatim", url, 30 * DAY, () => httpJson<NomRow[]>(url, OPTS));
   rows = rows.filter((r) => r.osm_type === "relation");
   if (!rows.length) {
-    // Algumas cidades não vêm como "city": busca livre e fica com os limites municipais.
-    // Brasília é só um nó; o "município" é o próprio Distrito Federal.
+    // Some cities do not come back as "city": run a free search and keep municipal boundaries.
+    // Brasília is only a node; its "municipality" is the Federal District itself.
     const url2 = `${base}&q=${encodeURIComponent(q)}`;
     const all = await cached("nominatim", url2, 30 * DAY, () => httpJson<NomRow[]>(url2, OPTS));
     rows = all.filter(
@@ -96,11 +98,12 @@ export async function searchCities(q: string): Promise<PlaceResult[]> {
   return rows.map(toPlace);
 }
 
+/** Street type words in Brazilian addresses ("Rua", "Av.", "Rodovia"…). */
 const STREET = String.raw`(?:R\.|Rua|Av\.?|Avenida|Al\.?|Alameda|Estr\.?|Estrada|Rod\.?|Rodovia|P[çc]\.?|Pra[çc]a|Tv\.?|Travessa|Lgo\.?|Largo|Via|Viela|Servid[ãa]o)`;
 
 /**
- * Variações de um endereço colado (ex.: do Google Maps: "Empresa - R. X, 185 - Bairro, Cidade - SP, 13098-320"),
- * da mais completa para a mais simples. O Nominatim é exigente: nome da empresa, CEP ou "Lot." fazem a busca vir vazia.
+ * Variations of a pasted address (e.g. from Google Maps: "Company - R. X, 185 - District, City - SP, 13098-320"),
+ * from the most complete to the simplest. Nominatim is strict: a company name, postal code or "Lot." empties results.
  */
 export function addressVariants(q: string): string[] {
   const out: string[] = [q.trim()];
@@ -110,7 +113,7 @@ export function addressVariants(q: string): string[] {
     .replace(/\s+/g, " ")
     .replace(/(\s*,\s*)+/g, ", ")
     .replace(/^[\s,]+|[\s,]+$/g, "");
-  // Descarta o que vem antes da rua (nome da empresa/prédio).
+  // Drop what comes before the street (company/building name).
   const streetAt = s.search(new RegExp(String.raw`(?:^|[-,]\s*)${STREET}\s`, "i"));
   if (streetAt > 0) s = s.slice(streetAt).replace(/^[-,\s]+/, "");
   const parts = s
@@ -133,12 +136,12 @@ export function addressVariants(q: string): string[] {
   return [...new Set(out.filter((v) => v.length >= 3))];
 }
 
-/** Detalhes da cidade com o limite municipal (simplificado). */
+/** City details with its (simplified) municipal boundary. */
 export async function getCity(osmId: string): Promise<City> {
   const url = `${BASE}/lookup?format=jsonv2&addressdetails=1&polygon_geojson=1&polygon_threshold=0.0005&osm_ids=${encodeURIComponent(osmId)}`;
   const rows = await cached("nominatim", url, 30 * DAY, () => httpJson<NomRow[]>(url, OPTS));
   const r = rows[0];
-  if (!r) throw new Error(`Cidade ${osmId} não encontrada`);
+  if (!r) throw new Error(t.sources.cityNotFound(osmId));
   return { ...toPlace(r), boundary: toPolygons(r.geojson) };
 }
 
@@ -149,7 +152,7 @@ async function searchAddressOnce(q: string, viewbox?: BBox): Promise<PlaceResult
   return rows.map(toPlace);
 }
 
-/** Busca um endereço tentando versões cada vez mais simples até achar algo (no máximo 5 consultas). */
+/** Searches an address trying simpler and simpler versions until something is found (at most 5 queries). */
 async function searchAddressIn(q: string, viewbox?: BBox, variants = 5): Promise<PlaceResult[]> {
   for (const v of addressVariants(q).slice(0, variants)) {
     const rows = await searchAddressOnce(v, viewbox);
@@ -158,13 +161,13 @@ async function searchAddressIn(q: string, viewbox?: BBox, variants = 5): Promise
   return [];
 }
 
-/** Até onde o trabalho pode estar em volta da cidade escolhida para morar (região metropolitana). */
+/** How far work may be from the city chosen to live in (metropolitan area). */
 export const WORK_REACH_M = 80_000;
 
 const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 const inBox = (p: LatLng, b: BBox) => p.lat >= b.south && p.lat <= b.north && p.lng >= b.west && p.lng <= b.east;
 
-/** Primeiro os resultados da cidade escrita no endereço; depois os de dentro da cidade escolhida; o resto por último. */
+/** Results in the city written in the address first; then those inside the chosen city; the rest last. */
 export function rankAddresses(rows: PlaceResult[], q: string, home: BBox): PlaceResult[] {
   const fq = fold(q);
   const score = (r: PlaceResult) => (r.city && fq.includes(fold(r.city)) ? 0 : inBox(r, home) ? 1 : 2);
@@ -175,8 +178,8 @@ export function rankAddresses(rows: PlaceResult[], q: string, home: BBox): Place
 }
 
 /**
- * Endereço do trabalho. Procura primeiro dentro da cidade onde a pessoa quer morar (como foi escrito); se não achar,
- * na região em volta, porque o trabalho pode ser em outra cidade ("Av. Norte-Sul, 500, Campinas" morando em Cosmópolis).
+ * Work address. Searches first inside the city where the user wants to live (as typed); otherwise in the area
+ * around it, because work may be in another city ("Av. Norte-Sul, 500, Campinas" while living in Cosmópolis).
  */
 export async function searchAddress(q: string, home?: BBox): Promise<PlaceResult[]> {
   if (!home) return searchAddressIn(q);
@@ -191,7 +194,7 @@ export async function reverse(p: LatLng): Promise<PlaceResult | null> {
   return "error" in row ? null : toPlace(row);
 }
 
-/** Cidade (município) onde fica um ponto, com o limite. null se o ponto não cai numa cidade. */
+/** City (municipality) containing a point, with its boundary. null when the point is in no city. */
 export async function cityAt(p: LatLng): Promise<City | null> {
   const url = `${BASE}/reverse?format=jsonv2&addressdetails=1&zoom=10&lat=${p.lat.toFixed(5)}&lon=${p.lng.toFixed(5)}`;
   const row = await cached("nominatim", url, 30 * DAY, () => httpJson<NomRow | { error: string }>(url, OPTS));
@@ -199,7 +202,7 @@ export async function cityAt(p: LatLng): Promise<City | null> {
   return getCity(`R${row.osm_id}`);
 }
 
-/** Geocodifica um endereço livre restrito a uma bbox; null se não achar. */
+/** Geocodes a free-form address restricted to a bbox; null when not found. */
 export async function geocodeInBox(q: string, box: BBox): Promise<LatLng | null> {
   const rows = await searchAddressIn(q, box).catch(() => []);
   const r = rows[0];

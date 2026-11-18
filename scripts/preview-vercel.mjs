@@ -1,6 +1,6 @@
-// Serve o .vercel/output no computador com as mesmas rotas e cabeçalhos (CSP etc.) da Vercel, repassando /api para
-// a API local. Serve para conferir o build de produção antes do push:
-//   npm run build:vercel && npm run dev:api   (em outro terminal)   e   npm run preview:vercel
+// Serves .vercel/output locally with the same routes and headers (CSP etc.) as Vercel, proxying /api to the local
+// API. Useful to check the production build before pushing:
+//   npm run build:vercel && npm run dev:api   (in another terminal)   and   npm run preview:vercel
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { createServer, request } from "node:http";
 import { extname, join, normalize } from "node:path";
@@ -11,7 +11,7 @@ const PORT = Number(process.env.PREVIEW_PORT ?? 4173);
 const API = new URL(process.env.API_URL ?? `http://127.0.0.1:${process.env.API_PORT ?? 3333}`);
 
 if (!existsSync(join(OUT, "config.json"))) {
-  console.error("Rode antes: npm run build:vercel");
+  console.error("Run first: npm run build:vercel");
   process.exit(1);
 }
 const { routes } = JSON.parse(readFileSync(join(OUT, "config.json"), "utf8"));
@@ -51,4 +51,4 @@ createServer((req, res) => {
     file = join(STATIC, "index.html");
   res.setHeader("content-type", TYPES[extname(file)] ?? "application/octet-stream");
   createReadStream(file).pipe(res);
-}).listen(PORT, "127.0.0.1", () => console.log(`Build da Vercel em http://127.0.0.1:${PORT} (API: ${API.origin})`));
+}).listen(PORT, "127.0.0.1", () => console.log(`Vercel build at http://127.0.0.1:${PORT} (API: ${API.origin})`));

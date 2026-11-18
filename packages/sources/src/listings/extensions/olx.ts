@@ -3,15 +3,15 @@ import { firstInt, parseBRL, slugify } from "../normalize.js";
 import type { RawListing, SiteExtension } from "../core/types.js";
 
 /**
- * OLX: a busca pública é por cidade (não por bairro) e os cards dizem o bairro, mas não a coordenada.
- * O motor baixa a cidade uma vez (cache) e deixa em cada região só os anúncios do bairro dela,
- * no centro do bairro (posição aproximada).
+ * OLX: the public search is per city (not per neighborhood) and cards name the neighborhood but not coordinates.
+ * The engine downloads the city once (cached) and keeps in each region only the listings of its neighborhood,
+ * placed at the neighborhood center (approximate position).
  */
 const SITE = "https://www.olx.com.br";
 
 const text = (el: Element | null | undefined) => el?.textContent?.replace(/\s+/g, " ").trim() ?? "";
 
-/** Parse puro de uma página de busca da OLX. */
+/** Pure parsing of an OLX search page. */
 export function parseOlx(html: string): RawListing[] {
   const { document } = parseHTML(html);
   const out: RawListing[] = [];

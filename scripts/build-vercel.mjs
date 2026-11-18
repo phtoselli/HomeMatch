@@ -1,7 +1,7 @@
-// Monta o deploy da Vercel no formato Build Output API (.vercel/output):
-//   static/            o app React (apps/web/dist), servido pela CDN
-//   functions/api.func a API inteira num arquivo só (esbuild), em São Paulo, com streaming (NDJSON)
-// Rodado pela Vercel a cada push na main (vercel.json → buildCommand). Precisa do `npm run build` antes.
+// Builds the Vercel deployment in the Build Output API format (.vercel/output):
+//   static/            the React app (apps/web/dist), served by the CDN
+//   functions/api.func the whole API in a single file (esbuild), in São Paulo, with streaming (NDJSON)
+// Run by Vercel on every push to main (vercel.json → buildCommand). Needs `npm run build` first.
 import { build } from "esbuild";
 import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 
@@ -22,10 +22,10 @@ await build({
   logLevel: "warning",
   banner: {
     js: [
-      // Pacotes CommonJS dentro do bundle ESM ainda chamam require().
+      // CommonJS packages inside the ESM bundle still call require().
       'import { createRequire as __createRequire } from "node:module";',
       "const require = __createRequire(import.meta.url);",
-      // Na função só /tmp aceita escrita: o cache das fontes vai para lá (dura enquanto a instância viver).
+      // Only /tmp is writable in the function: the sources cache goes there (it lasts while the instance lives).
       'process.env.DATA_DIR ??= "/tmp/homematch";',
     ].join("\n"),
   },
@@ -39,15 +39,15 @@ await json(`${FN}/.vc-config.json`, {
   launcherType: "Nodejs",
   shouldAddHelpers: false,
   supportsResponseStreaming: true,
-  // Análise e busca de imóveis levam minutos (respeitando o ritmo de cada site).
+  // Analysis and listing search take minutes (respecting each site's pace).
   maxDuration: 300,
-  // São Paulo: perto dos sites lidos, e eles veem um acesso do Brasil.
+  // São Paulo: close to the sites read, and they see a visit from Brazil.
   regions: ["gru1"],
 });
 
-// Cabeçalhos de segurança em tudo (app e API). A CSP só deixa rodar script do próprio app: mesmo que um link de
-// fora escapasse do filtro (`safeExternalUrl`), um `javascript:` não roda. Imagens vêm de qualquer site https
-// (fotos dos anúncios, tiles do mapa); estilo inline é preciso para o Leaflet (marcadores com `style`).
+// Security headers on everything (app and API). The CSP only runs the app's own scripts: even if an outside link
+// slipped past the filter (`safeExternalUrl`), a `javascript:` URL would not run. Images come from any https site
+// (listing photos, map tiles); inline style is needed by Leaflet (markers with `style`).
 const CSP = [
   "default-src 'self'",
   "script-src 'self'",
@@ -81,4 +81,4 @@ await json(`${OUT}/config.json`, {
   ],
 });
 
-console.log(`Vercel: ${OUT} pronto (app estático + função /api).`);
+console.log(`Vercel: ${OUT} ready (static app + /api function).`);

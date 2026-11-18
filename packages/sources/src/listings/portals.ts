@@ -1,7 +1,9 @@
+import { t } from "@homematch/i18n";
+
 /**
- * Portais com extensão própria (valem para qualquer cidade do Brasil). A ordem é a da lista na tela.
- * Para adicionar um portal: crie a extensão em extensions/ (ou um SourceAdapter, se o site tiver API
- * pública), registre em listings/index.ts e descreva aqui.
+ * Portals with their own extension (valid for any city in Brazil). The order is the one shown on screen.
+ * To add a portal: create its extension in extensions/ (or a SourceAdapter, if the site has a public API),
+ * register it in listings/index.ts and describe it here.
  */
 export interface PortalDef {
   id: string;
@@ -10,31 +12,13 @@ export interface PortalDef {
   note?: string;
 }
 
+const notes = t.sources.portalNotes;
+
 export const PORTALS: PortalDef[] = [
   { id: "quintoandar", label: "QuintoAndar", home: "https://www.quintoandar.com.br" },
-  {
-    id: "chavesnamao",
-    label: "Chaves na Mão",
-    home: "https://www.chavesnamao.com.br",
-    note: "Junta anúncios de várias imobiliárias. 30 por bairro (o site só permite a 1ª página a robôs).",
-  },
-  {
-    id: "zapimoveis",
-    label: "ZAP Imóveis",
-    home: "https://www.zapimoveis.com.br",
-    note: "Endereço aproximado quando o anúncio não traz o número.",
-  },
-  {
-    id: "vivareal",
-    label: "VivaReal",
-    home: "https://www.vivareal.com.br",
-    note: "Às vezes bloqueia a leitura automática.",
-  },
-  { id: "lopes", label: "Lopes", home: "https://www.lopes.com.br", note: "Os 23 primeiros de cada bairro." },
-  {
-    id: "olx",
-    label: "OLX",
-    home: "https://www.olx.com.br",
-    note: "Busca pela cidade; posição aproximada (centro do bairro).",
-  },
+  { id: "chavesnamao", label: "Chaves na Mão", home: "https://www.chavesnamao.com.br", note: notes.chavesnamao },
+  { id: "zapimoveis", label: "ZAP Imóveis", home: "https://www.zapimoveis.com.br", note: notes.zapimoveis },
+  { id: "vivareal", label: "VivaReal", home: "https://www.vivareal.com.br", note: notes.vivareal },
+  { id: "lopes", label: "Lopes", home: "https://www.lopes.com.br", note: notes.lopes },
+  { id: "olx", label: "OLX", home: "https://www.olx.com.br", note: notes.olx },
 ];

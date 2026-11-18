@@ -1,5 +1,5 @@
-// Tudo que vem de fora: OpenStreetMap, operador de ônibus, portais e imobiliárias, links colados.
-// Cada chamada externa passa por http.ts (ritmo por host, novas tentativas, cache).
+// Everything that comes from outside: OpenStreetMap, bus operators, portals and agencies, pasted links.
+// Every outgoing call goes through http.ts (per-host pacing, retries, cache).
 export { FEATURES, featureById, fetchFeaturePois, fetchPlaceNames } from "./features.js";
 export { fetchBusStops, fetchRoutesNearWork } from "./transit.js";
 export { fetchIntercity, type BusStation, type IntercityData } from "./intercity.js";

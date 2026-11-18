@@ -4,7 +4,7 @@ const R = 6_371_000;
 const RAD = Math.PI / 180;
 export const M_PER_DEG_LAT = 111_320;
 
-/** Distância em metros entre dois pontos (haversine). */
+/** Distance in meters between two points (haversine). */
 export function distance(a: LatLng, b: LatLng): number {
   const dLat = (b.lat - a.lat) * RAD;
   const dLng = (b.lng - a.lng) * RAD;
@@ -52,7 +52,7 @@ function inRing(lng: number, lat: number, ring: Ring): boolean {
   return inside;
 }
 
-/** Ponto dentro de um multipolígono (anéis em [lng, lat]). */
+/** Point inside a multipolygon (rings in [lng, lat]). */
 export function inMultiPolygon(p: LatLng, polys: Polygon[]): boolean {
   for (const poly of polys) {
     const [outer, ...holes] = poly;
@@ -63,7 +63,7 @@ export function inMultiPolygon(p: LatLng, polys: Polygon[]): boolean {
   return false;
 }
 
-/** Centros de uma grade regular (em metros) cobrindo a bbox. */
+/** Centers of a regular grid (in meters) covering the bbox. */
 export function gridCenters(b: BBox, cellM: number): LatLng[] {
   const mid = (b.north + b.south) / 2;
   const dLat = cellM / M_PER_DEG_LAT;
@@ -76,8 +76,8 @@ export function gridCenters(b: BBox, cellM: number): LatLng[] {
 }
 
 /**
- * Índice espacial simples por baldes (grade de ~bucketM metros).
- * Bom o bastante para dezenas de milhares de pontos dentro de uma cidade.
+ * Simple bucketed spatial index (a grid of ~bucketM meters).
+ * Good enough for tens of thousands of points within a city.
  */
 export class PointIndex<T extends LatLng> {
   private buckets = new Map<string, T[]>();
@@ -109,7 +109,7 @@ export class PointIndex<T extends LatLng> {
     return `${i}:${j}`;
   }
 
-  /** Todos os pontos a até `radiusM` metros, com a distância. */
+  /** All points within `radiusM` meters, with their distance. */
   within(p: LatLng, radiusM: number): { item: T; dist: number }[] {
     const ri = Math.ceil(radiusM / this.bucketM);
     const ci = Math.floor(p.lat / this.dLat);
@@ -128,7 +128,7 @@ export class PointIndex<T extends LatLng> {
     return out;
   }
 
-  /** Ponto mais próximo a até `maxM` metros (ou null). */
+  /** Closest point within `maxM` meters (or null). */
   nearest(p: LatLng, maxM: number): { item: T; dist: number } | null {
     let best: { item: T; dist: number } | null = null;
     for (const r of this.within(p, maxM)) if (!best || r.dist < best.dist) best = r;
@@ -136,5 +136,5 @@ export class PointIndex<T extends LatLng> {
   }
 }
 
-/** Minutos a pé (75 m/min, 25% de desvio sobre a linha reta). */
+/** Minutes on foot (75 m/min, 25% detour over the straight line). */
 export const walkMin = (m: number) => Math.max(1, Math.round((m * 1.25) / 75));

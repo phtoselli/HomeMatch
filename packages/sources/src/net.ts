@@ -1,16 +1,17 @@
 import { lookup, type LookupAddress, type LookupAllOptions } from "node:dns";
 import { isIP, type LookupFunction } from "node:net";
 import { Agent } from "undici";
+import { t } from "@homematch/i18n";
 
 /**
- * Guarda de rede: o servidor só fala com endereços públicos. Vale para toda chamada externa (via `http.ts`), porque
- * vários endereços vêm de fora: links colados, sites de imobiliárias e de operadores tirados do OpenStreetMap (que
- * qualquer pessoa edita) e redirecionamentos. Sem isso, dava para fazer o servidor acessar a rede interna (SSRF).
+ * Network guard: the server only talks to public addresses. It applies to every outgoing call (via `http.ts`),
+ * because many addresses come from outside: pasted links, agency and operator websites taken from OpenStreetMap
+ * (which anyone can edit) and redirects. Without it, the server could be made to reach the internal network (SSRF).
  */
 
 const ipv4 = (ip: string) => ip.split(".").map(Number) as [number, number, number, number];
 
-/** Endereço IP de rede local, loopback, link-local, CGNAT, multicast, documentação ou não roteável. */
+/** Local network, loopback, link-local, CGNAT, multicast, documentation or non-routable IP address. */
 export function isPrivateAddress(ip: string): boolean {
   const h = ip.replace(/^\[|\]$/g, "").toLowerCase();
   if (isIP(h) === 4) {
@@ -51,14 +52,14 @@ export function isPrivateAddress(ip: string): boolean {
 export class PrivateNetworkError extends Error {
   readonly code = "EPRIVATE";
   constructor() {
-    super("Link de rede local não é permitido");
+    super(t.sources.privateNetwork);
   }
 }
 
-/** Só http(s) e nada de rede local no texto da URL (o IP de verdade é conferido na conexão). */
+/** Only http(s) and no local network in the URL text (the real IP is checked when connecting). */
 export function assertPublicUrl(raw: string): URL {
   const u = new URL(raw.trim());
-  if (!/^https?:$/.test(u.protocol)) throw new Error("Use um link http(s)");
+  if (!/^https?:$/.test(u.protocol)) throw new Error(t.sources.httpOnly);
   const h = u.hostname.toLowerCase();
   if (
     h === "localhost" ||
@@ -73,8 +74,8 @@ export function assertPublicUrl(raw: string): URL {
 }
 
 /**
- * Resolução de nomes que recusa IP de rede local. Roda na hora de abrir a conexão, então o IP conferido é o mesmo
- * usado: um nome que resolve para um IP público na checagem e para 127.0.0.1 na conexão (DNS rebinding) não passa.
+ * Name resolution that rejects local network IPs. It runs when the connection opens, so the checked IP is the one
+ * used: a name resolving to a public IP during the check and to 127.0.0.1 on connect (DNS rebinding) is rejected.
  */
 type LookupCallback = (err: Error | null, address?: string | LookupAddress[], family?: number) => void;
 
@@ -87,5 +88,5 @@ export const publicLookup = ((hostname: string, options: LookupAllOptions, callb
   });
 }) as unknown as LookupFunction;
 
-/** Conexões HTTP do servidor: só endereços públicos. */
+/** The server's HTTP connections: public addresses only. */
 export const publicDispatcher = new Agent({ connect: { lookup: publicLookup } });

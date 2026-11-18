@@ -1,5 +1,5 @@
 @echo off
-rem Dois cliques para abrir o HomeMatch no navegador. Feche esta janela para encerrar.
+rem Double-click to open HomeMatch in the browser. Close this window to stop it.
 title HomeMatch
 cd /d "%~dp0"
 node scripts\app.mjs

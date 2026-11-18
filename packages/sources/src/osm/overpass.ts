@@ -1,8 +1,9 @@
 import type { BBox } from "@homematch/contracts";
+import { t } from "@homematch/i18n";
 import { DAY, cached, httpFetch } from "../http.js";
 
-// Servidores públicos do Overpass; tenta o próximo se um falhar. O overpass-api.de tem duas máquinas (lz4 e z) com
-// filas próprias: quando o endereço principal diz "at capacity", uma delas costuma ter vaga.
+// Public Overpass servers; the next one is tried when one fails. overpass-api.de has two machines (lz4 and z) with
+// their own queues: when the main address says "at capacity", one of them usually has room.
 const MIRRORS = [
   "https://overpass-api.de/api/interpreter",
   "https://lz4.overpass-api.de/api/interpreter",
@@ -11,9 +12,9 @@ const MIRRORS = [
   "https://overpass.kumi.systems/api/interpreter",
 ];
 
-/** Lotado ou fora do ar por pouco tempo (vale tentar de novo daqui a pouco). */
+/** At capacity or briefly down (worth retrying shortly). */
 const BUSY = /HTTP (429|502|503|504)|at capacity|Too Many Requests|timed out|abort/i;
-/** Segunda volta pelos servidores só se a primeira falhou rápido (todos lotados) e com essa pausa. */
+/** Second round over the servers only if the first one failed fast (all busy), after this pause. */
 const RETRY = { withinMs: 45_000, pauseMs: 4_000 };
 
 export interface OsmElement {
@@ -28,7 +29,7 @@ export interface OsmElement {
     type: "node" | "way" | "relation";
     ref: number;
     role: string;
-    // presentes com `out geom`
+    // present with `out geom`
     lat?: number;
     lon?: number;
     geometry?: ({ lat: number; lon: number } | null)[];
@@ -44,14 +45,14 @@ export function bboxQL(b: BBox): string {
   return `${b.south.toFixed(5)},${b.west.toFixed(5)},${b.north.toFixed(5)},${b.east.toFixed(5)}`;
 }
 
-/** Executa uma consulta Overpass QL (com cache em disco, 7 dias por padrão). */
+/** Runs an Overpass QL query (disk-cached, 7 days by default). */
 export async function overpass(query: string, ttlMs = 7 * DAY): Promise<OverpassResponse> {
   return cached("overpass", query, ttlMs, async () => {
     const started = Date.now();
     try {
       return await tryMirrors(query);
     } catch (e) {
-      // Todos lotados de uma vez: espera um pouco e dá mais uma volta (a fila do Overpass anda rápido).
+      // All busy at once: wait a bit and try another round (the Overpass queue moves fast).
       if (!BUSY.test((e as Error).message) || Date.now() - started > RETRY.withinMs) throw e;
       await new Promise((r) => setTimeout(r, RETRY.pauseMs));
       return tryMirrors(query);
@@ -59,7 +60,7 @@ export async function overpass(query: string, ttlMs = 7 * DAY): Promise<Overpass
   });
 }
 
-/** Uma volta pelos servidores: o primeiro que responder vence. */
+/** One round over the servers: the first to answer wins. */
 async function tryMirrors(query: string): Promise<OverpassResponse> {
   const errors: string[] = [];
   for (const url of MIRRORS) {
@@ -70,7 +71,7 @@ async function tryMirrors(query: string): Promise<OverpassResponse> {
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         minIntervalMs: 1000,
         timeoutMs: 130_000,
-        retries: 0, // servidor lotado: passa logo para o próximo espelho
+        retries: 0, // busy server: move on to the next mirror right away
       });
       const text = await res.text();
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${brief(text)}`);
@@ -83,10 +84,10 @@ async function tryMirrors(query: string): Promise<OverpassResponse> {
       errors.push(`${new URL(url).host}: ${(e as Error).message}`);
     }
   }
-  throw new Error(`Overpass indisponível. ${errors.join(" | ")}`);
+  throw new Error(t.sources.overpassUnavailable(errors.join(" | ")));
 }
 
-/** Erro curto e legível (o servidor lotado devolve uma página HTML inteira). */
+/** Short, readable error (a busy server returns a whole HTML page). */
 const brief = (text: string) =>
   text
     .replace(/<[^>]+>/g, " ")
@@ -94,7 +95,7 @@ const brief = (text: string) =>
     .trim()
     .slice(0, 90);
 
-/** Coordenada de um elemento (nó ou centro de via/relação). */
+/** Coordinates of an element (node, or center of a way/relation). */
 export function elementPoint(e: OsmElement): { lat: number; lng: number } | null {
   if (e.lat != null && e.lon != null) return { lat: e.lat, lng: e.lon };
   if (e.center) return { lat: e.center.lat, lng: e.center.lon };

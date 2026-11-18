@@ -3,7 +3,7 @@ import type { LatLng } from "@homematch/contracts";
 import { iconSvg } from "@/shared/ui";
 import { useLayer } from "../hooks/useLayer";
 
-/** Pin do trabalho (sempre visível). */
+/** Work pin (always visible). */
 export function WorkMarker({ work }: { work: LatLng | null }) {
   useLayer(
     (g) => {

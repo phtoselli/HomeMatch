@@ -1,11 +1,11 @@
-# Código de conduta
+# Code of conduct
 
-Este projeto segue o [Contributor Covenant 2.1](https://www.contributor-covenant.org/pt-br/version/2/1/code_of_conduct/).
+This project follows the [Contributor Covenant 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
 
-Em resumo: trate todo mundo com respeito, critique ideias e código (nunca pessoas), aceite críticas construtivas
-e não tolere assédio, discriminação ou ataques pessoais. Isso vale para issues, pull requests, revisões e
-qualquer outro espaço do projeto.
+In short: treat everyone with respect, criticize ideas and code (never people), accept constructive criticism and
+do not tolerate harassment, discrimination or personal attacks. This applies to issues, pull requests, reviews and
+any other project space.
 
-Comportamento inadequado pode ser reportado em privado pela aba **Security → Report a vulnerability** do
-repositório, indicando que se trata de conduta. Quem mantém o projeto pode remover comentários, commits ou
-contribuições que desrespeitem este código e, em casos graves, bloquear quem os fez.
+Inappropriate behavior can be reported privately through the repository's **Security → Report a vulnerability**
+tab, noting that it is about conduct. Maintainers may remove comments, commits or contributions that break this
+code and, in serious cases, block their authors.

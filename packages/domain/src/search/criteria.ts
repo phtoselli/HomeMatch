@@ -1,7 +1,9 @@
 import type { Listing, ListingFilters, PropertyType } from "@homematch/contracts";
+import { PROPERTY_TYPES } from "@homematch/contracts/constants";
+import { migrateAmenity, migratePropertyType } from "../storage/legacy.js";
 import { hasAmenity, matchesFilters, type MapFilters } from "./listing-filters.js";
 
-/** Parâmetros da análise de regiões (não há mais tempo máximo: as regiões têm nível pelas prioridades). */
+/** Region analysis parameters (there is no maximum commute: regions get a level from the user's priorities). */
 export interface Params {
   maxWalkToStopM: number;
   cellSizeM: number;
@@ -9,7 +11,7 @@ export interface Params {
 
 export const DEFAULT_PARAMS: Params = { maxWalkToStopM: 600, cellSizeM: 500 };
 
-/** Parâmetros salvos de versões antigas (com tempo máximo e peso do trajeto) continuam valendo. */
+/** Parameters saved by older versions (with a maximum commute and commute weight) still load. */
 export function normalizeParams(p: Partial<Params> & Record<string, unknown>): Params {
   return {
     maxWalkToStopM: Number(p.maxWalkToStopM) || DEFAULT_PARAMS.maxWalkToStopM,
@@ -19,12 +21,12 @@ export function normalizeParams(p: Partial<Params> & Record<string, unknown>): P
 
 export type SortKey = "match" | "price" | "commute" | "area";
 
-/** O que a pessoa procura (vai para a busca nos sites) + alvo de preço, ordem e comodidades (no navegador). */
+/** What the user is looking for (sent to the sites) + price target, sort order and amenities (in the browser). */
 export interface Filters extends MapFilters {
   sort: SortKey;
-  /** Quanto a pessoa quer pagar por mês (alvo). O teto da busca é o alvo + a folga. */
+  /** How much the user wants to pay per month (target). The search cap is target + slack. */
   budget?: number | null;
-  /** Quanto aceita passar do alvo, em %. */
+  /** How far above the target the user accepts, in %. */
   slack?: number;
 }
 
@@ -44,29 +46,31 @@ export const DEFAULT_FILTERS: Filters = {
   slack: 15,
 };
 
-/** Filtros salvos de versões antigas (sem alvo/folga) continuam valendo. */
+/** Filters saved by older versions (no target/slack, Portuguese ids) still load. */
 export function normalizeFilters(f: Partial<Filters>): Filters {
   const out = { ...DEFAULT_FILTERS, ...f };
   if (f.budget === undefined) {
-    // Antes só havia o teto: ele vira o alvo, sem folga (o teto continua o mesmo).
+    // Older versions only had the cap: it becomes the target, with no slack (the cap stays the same).
     out.budget = out.priceMax ?? null;
     out.slack = 0;
-    out.sort = "match"; // a ordem nova passa a ser a padrão
+    out.sort = "match"; // the new default order
   }
   if (!["match", "price", "commute", "area"].includes(out.sort)) out.sort = "match";
+  out.types = (out.types ?? []).map(migratePropertyType).filter((x) => PROPERTY_TYPES.includes(x));
+  out.amenities = (out.amenities ?? []).map(migrateAmenity);
   return out;
 }
 
-/** Teto de preço = alvo + folga. */
+/** Price cap = target + slack. */
 export const ceilingOf = (budget: number | null | undefined, slack = 0) =>
   budget ? Math.round(budget * (1 + slack / 100)) : null;
 
-/** Muda alvo/folga mantendo o teto (priceMax) coerente. */
+/** Changes target/slack keeping the cap (priceMax) consistent. */
 export function withBudget(f: Filters, budget: number | null, slack = f.slack ?? 0): Filters {
   return { ...f, budget, slack, priceMax: ceilingOf(budget, slack) };
 }
 
-/** Só a parte que os sites entendem (o resto é aplicado no navegador). */
+/** Only the part the sites understand (the rest is applied in the browser). */
 export const searchFilters = (f: Filters): ListingFilters => ({
   types: f.types,
   priceMin: f.priceMin,
@@ -79,8 +83,8 @@ export const searchFilters = (f: Filters): ListingFilters => ({
 });
 
 /**
- * Busca larga: o que vai para os sites passa um pouco do pedido (preço até +20% sobre o teto, um quarto
- * a menos, qualquer tipo). Assim a tela nunca fica vazia por R$ 15: o que passa vira "quase lá", dizendo o quê.
+ * Wide search: what is sent to the sites goes a bit beyond the request (price up to +20% over the cap, one bedroom
+ * less, any type). So the screen is never empty over a few reais: near misses show up as "almost there", saying why.
  */
 export const WIDE = { price: 0.2, bedrooms: 1 };
 
@@ -91,7 +95,7 @@ export const wideFilters = (f: Filters): ListingFilters => ({
   minBedrooms: Math.max(0, f.minBedrooms - WIDE.bedrooms),
 });
 
-/** O que some de vez da lista: só o que passa da busca larga e os filtros finos (banheiros, vagas, área). */
+/** What is removed from the list for good: beyond the wide search and the fine filters (baths, parking, area). */
 export function visibleListings<T extends Listing>(list: T[], f: Filters): T[] {
   const wide = wideFilters(f);
   const wanted = f.amenities ?? [];
@@ -100,7 +104,7 @@ export function visibleListings<T extends Listing>(list: T[], f: Filters): T[] {
   );
 }
 
-export const SEARCH_TYPES: PropertyType[] = ["apartamento", "casa", "casa_condominio", "studio"];
+export const SEARCH_TYPES: PropertyType[] = ["apartment", "house", "condo_house", "studio"];
 
-/** Preço que vale para a pessoa (total ou só aluguel). */
+/** The price that matters to the user (total or rent only). */
 export const priceOf = (l: Listing, basis: Filters["basis"]) => (basis === "rent" ? l.rent : l.total);

@@ -1,12 +1,13 @@
-## O que muda
+## What changes
 
-## Como testei
+## How I tested it
 
 ## Checklist
 
-- [ ] `npm run check` passa
-- [ ] Regra de negócio nova está em `packages/domain`, com teste
-- [ ] Mudança de contrato da API está em `packages/contracts`
-- [ ] Raspador novo/alterado tem parse puro com fixture real
-- [ ] Nada guardado no servidor (o que é da pessoa fica no `localStorage`)
-- [ ] Concordo que a contribuição seja distribuída sob a PolyForm Noncommercial 1.0.0
+- [ ] `npm run check` passes
+- [ ] New business rules are in `packages/domain`, with tests
+- [ ] API contract changes are in `packages/contracts`
+- [ ] New/changed scrapers have a pure parser with a real fixture
+- [ ] New UI text is in the `packages/i18n` catalog
+- [ ] Nothing stored on the server (user data stays in `localStorage`)
+- [ ] I agree that this contribution is distributed under the PolyForm Noncommercial 1.0.0

@@ -15,12 +15,15 @@ import {
   type Importance,
   type Params,
 } from "@homematch/domain";
+import { t } from "@homematch/i18n";
 import { api } from "@/shared/api/client";
 import { persistFields, readSaved } from "@/shared/lib/persist";
 
-/** Quantas das melhores regiões entram na busca de imóveis automática. */
+const msg = t.ui.search;
+
+/** How many of the best regions enter the automatic listing search. */
 export const TOP_REGIONS = 5;
-/** Com menos anúncios que isso, a busca se amplia sozinha para as próximas regiões (até MAX_REGIONS). */
+/** With fewer listings than this, the search widens by itself to the next regions (up to MAX_REGIONS). */
 export const ENOUGH_LISTINGS = 25;
 export const MAX_REGIONS = 15;
 
@@ -31,19 +34,19 @@ export interface RunAllArgs {
   work: LatLng;
   sources: SourceId[];
   onFit: (b: BBox) => void;
-  /** Pontos das linhas que a pessoa adicionou (perto deles, o transporte conta como atingido). */
+  /** Stops of the lines the user added (near them, transit counts as met). */
   preferredStops?: [number, number][];
 }
 
 /**
- * Importância de cada critério ("transporte" e ids dos lugares): 3 = principal (só um), 2 = importante,
- * 1 = bom ter; o transporte também pode ser 0 (não uso, tenho carro).
+ * Importance of each criterion ("transit" and place ids): 3 = main (only one), 2 = important, 1 = nice to have;
+ * transit may also be 0 (not used, has a car).
  */
 export type Priorities = Record<string, Importance | 0>;
 
 export const DEFAULT_PRIORITIES: Priorities = { [TRANSIT_CRITERION]: IMPORTANCE.main };
 
-/** Importância de um critério (lugar sem valor salvo = importante; transporte sem valor = principal). */
+/** Importance of a criterion (a place without a saved value = important; transit without one = main). */
 export function importanceOf(p: Priorities, id: string): Importance | 0 {
   const v = p[id];
   if (v != null) return v;
@@ -51,14 +54,14 @@ export function importanceOf(p: Priorities, id: string): Importance | 0 {
 }
 
 /**
- * Muda a importância de um critério. Só um é principal: escolher outro rebaixa o anterior para "importante".
- * `ids` são os critérios em uso (transporte e lugares escolhidos).
+ * Changes a criterion's importance. Only one is main: picking another demotes the previous one to "important".
+ * `ids` are the criteria in use (transit and the chosen places).
  */
 export function setImportance(p: Priorities, ids: string[], id: string, v: Importance | 0): Priorities {
   const out: Priorities = { ...p, [id]: v };
   if (v === IMPORTANCE.main)
     for (const other of ids) if (other !== id && importanceOf(out, other) === IMPORTANCE.main) out[other] = 2;
-  // Tirou o principal: o próximo critério de maior importância assume (sempre há um principal à vista).
+  // The main one was removed: the next most important criterion takes over (there is always a visible main).
   if (!ids.some((x) => importanceOf(out, x) === IMPORTANCE.main)) {
     const next =
       mainOf(
@@ -70,7 +73,7 @@ export function setImportance(p: Priorities, ids: string[], id: string, v: Impor
   return out;
 }
 
-/** O critério principal entre os em uso (o primeiro com a maior importância). */
+/** The main criterion among those in use (the first with the highest importance). */
 export function mainOf(p: Priorities, ids: string[]): string | undefined {
   let best: string | undefined;
   for (const id of ids)
@@ -79,31 +82,31 @@ export function mainOf(p: Priorities, ids: string[]): string | undefined {
 }
 
 interface SearchState {
-  // ---- o que a pessoa pede (salvo no navegador) ----
-  /** Característica → raio em metros (o que quer perto de casa). */
+  // ---- what the user asks for (saved in the browser) ----
+  /** Feature → radius in meters (what the user wants near home). */
   chosen: Record<string, number>;
   params: Params;
   priorities: Priorities;
-  /** Nível mínimo das regiões que aparecem (no mapa, na lista de regiões e nos imóveis). */
+  /** Minimum level of the regions shown (on the map, in the region list and for listings). */
   minLevel: RegionLevel;
   filters: Filters;
-  /** Fontes desmarcadas: as novas que aparecerem na cidade entram marcadas. */
+  /** Unchecked sources: new sources showing up in the city start checked. */
   disabledSources: SourceId[];
   maxPerRegion: number;
-  // ---- o que a busca achou (some ao recarregar) ----
+  // ---- what the search found (gone after a reload) ----
   analysis: AnalysisResult | null;
   listings: Listing[];
   selectedRegions: Set<string>;
-  /** Regiões em que os imóveis da lista foram buscados (abas da lista). */
+  /** Regions where the listed properties were searched (list tabs). */
   searchedRegions: Region[];
   busy: Busy;
   log: string[];
-  /** Avisos da busca (site que bloqueou, região que falhou): ficam todos, o log só guarda os últimos. */
+  /** Search warnings (a site that blocked, a region that failed): all are kept; the log keeps only the latest. */
   warnings: string[];
   error: string | null;
-  /** Filtros usados na última busca: se a pessoa afrouxar algum, precisa buscar de novo. */
+  /** Filters used in the last search: loosening one requires searching again. */
   searchedWith: string | null;
-  /** Quando a busca volta vazia: o que existe logo acima do teto e em outros tipos. */
+  /** When the search comes back empty: what exists just above the cap and in other types. */
   diagnosis: Diagnosis | null;
 
   setChosen: (c: Record<string, number>) => void;
@@ -137,21 +140,24 @@ const EMPTY_RESULTS = {
 } satisfies Partial<SearchState>;
 
 export const useSearchStore = create<SearchState>()((set, get) => {
-  /** Uma linha no andamento; "Aviso: …" também entra nos avisos (um por fonte). */
-  const say = (m: string) =>
+  /** One progress line; warnings also go to the warning list (one per source). */
+  const say = (message: string, warning = false) =>
     set((s) => {
-      const log = [...s.log.slice(-7), m];
-      if (!m.startsWith("Aviso: ")) return { log };
-      // A busca ampliada roda em lotes e repetiria o mesmo bloqueio: um aviso por fonte ("Aviso: OLX: …").
-      const key = (x: string) => x.slice(7).split(":")[0];
-      return { log, warnings: s.warnings.some((x) => key(x) === key(m)) ? s.warnings : [...s.warnings, m] };
+      const log = [...s.log.slice(-7), warning ? msg.warningLine(message) : message];
+      if (!warning) return { log };
+      // The widened search runs in batches and would repeat the same block: one warning per source ("OLX: …").
+      const key = (x: string) => x.split(":")[0];
+      return {
+        log,
+        warnings: s.warnings.some((x) => key(x) === key(message)) ? s.warnings : [...s.warnings, message],
+      };
     });
   const onProgress = (ev: { type: string; message?: string }) => {
-    if (ev.type === "progress" || ev.type === "warning") say((ev.type === "warning" ? "Aviso: " : "") + ev.message);
+    if (ev.type === "progress" || ev.type === "warning") say(ev.message ?? "", ev.type === "warning");
   };
 
   return {
-    chosen: readSaved("features", { atacarejo: 2000, parque: 1500 }),
+    chosen: readSaved("features", { wholesale_market: 2000, park: 1500 }),
     params: normalizeParams(readSaved<Partial<Params>>("params", DEFAULT_PARAMS)),
     priorities: readSaved("priorities", DEFAULT_PRIORITIES),
     minLevel: readSaved<RegionLevel>("minLevel", "ok"),
@@ -174,13 +180,13 @@ export const useSearchStore = create<SearchState>()((set, get) => {
     reset: () => set(EMPTY_RESULTS),
 
     /**
-     * Busca os anúncios nas regiões dadas. Se vierem poucos, continua sozinha pelas próximas regiões da lista
-     * `more` (em lotes de TOP_REGIONS), para a pessoa não ter que ajustar nada para ver opções.
+     * Searches listings in the given regions. With few results, it continues by itself through the next regions in
+     * `more` (in batches of TOP_REGIONS), so the user does not have to adjust anything to see options.
      */
     async runListings(city, regions, sources, filters = get().filters, more = []) {
       if (!regions.length) return;
       set({ busy: "listings", error: null, listings: [], diagnosis: null, searchedRegions: regions });
-      // A busca nos sites é mais larga que o pedido; o que passa aparece como "quase lá".
+      // The site search is wider than the request; near misses show up as "almost there".
       const sf = wideFilters(filters);
       const cityRef = { name: city.name, stateCode: city.stateCode, bbox: city.bbox };
       const { maxPerRegion } = get();
@@ -199,19 +205,16 @@ export const useSearchStore = create<SearchState>()((set, get) => {
         while (ids.size < ENOUGH_LISTINGS && rest.length && searched.length < MAX_REGIONS) {
           const next = rest.slice(0, Math.min(TOP_REGIONS, MAX_REGIONS - searched.length));
           rest = rest.slice(next.length);
-          say(
-            `Só ${ids.size} ${ids.size === 1 ? "anúncio" : "anúncios"} até agora. ` +
-              `Ampliando a busca para mais ${next.length} ${next.length === 1 ? "região" : "regiões"}…`,
-          );
+          say(msg.widening(ids.size, next.length));
           searched = [...searched, ...next];
           set({ searchedRegions: searched, selectedRegions: new Set(searched.map((r) => r.id)) });
           for (const l of await fetchIn(next)) ids.add(l.id);
         }
         set({ searchedWith: JSON.stringify(sf) });
         if (!ids.size && sources.length) {
-          // Nada com esses filtros: olha o que existe logo acima do teto e em outros tipos,
-          // para dizer o porquê e sugerir o ajuste (sem isso a tela só ficava vazia).
-          say("Nenhum anúncio com esses filtros. Vendo o que existe por perto do seu orçamento…");
+          // Nothing with these filters: look at what exists just above the cap and in other types, to explain why
+          // and suggest an adjustment (otherwise the screen would just be empty).
+          say(msg.diagnosing);
           const probe = (f: typeof sf) =>
             api
               .listings({ city: cityRef, regions, sources, maxPerRegion: 60, filters: f }, () => {})
@@ -221,7 +224,7 @@ export const useSearchStore = create<SearchState>()((set, get) => {
           const any = await probe({ ...sf, types: [], minBedrooms: 0, minBathrooms: 0, minParking: 0, minArea: 0 });
           set({ diagnosis: diagnose(same, any, filters) });
         }
-        say("Busca de imóveis concluída.");
+        say(msg.listingsDone);
       } catch (e) {
         set({ error: (e as Error).message });
       } finally {
@@ -229,10 +232,10 @@ export const useSearchStore = create<SearchState>()((set, get) => {
       }
     },
 
-    /** Acha as regiões e já busca os imóveis nas melhores. */
+    /** Finds the regions and searches listings in the best ones. */
     async runAll({ city, work, sources, onFit, preferredStops }) {
       const { params, priorities, chosen } = get();
-      // O mapa anterior fica na tela até a nova análise chegar.
+      // The previous map stays on screen until the new analysis arrives.
       const { analysis, searchedWith } = get();
       set({ ...EMPTY_RESULTS, analysis, searchedWith, busy: "analyze" });
       const features = Object.entries(chosen).map(([id, radius]) => ({
@@ -251,16 +254,13 @@ export const useSearchStore = create<SearchState>()((set, get) => {
         set({ error: (e as Error).message, busy: null });
         return;
       }
-      // Só as regiões do nível escolhido (ou melhor) entram na busca de imóveis.
+      // Only regions at the chosen level (or better) enter the listing search.
       const eligible = res.regions.filter((r) => atLeast(r.level, get().minLevel));
       const top = eligible.slice(0, TOP_REGIONS);
       const more = eligible.slice(TOP_REGIONS, MAX_REGIONS);
       set({ analysis: res, selectedRegions: new Set(top.map((r) => r.id)) });
       const n = (l: RegionLevel) => res.regions.filter((r) => r.level === l).length;
-      say(
-        `Regiões: ${n("excelente")} excelentes, ${n("boa")} boas e ${n("ok")} ok.` +
-          (top.length ? ` Buscando imóveis nas ${top.length} melhores…` : ""),
-      );
+      say(msg.regionsFound(n("excellent"), n("good"), n("ok"), top.length));
       if (res.cells.length) {
         const lats = res.cells.map((c) => c.lat);
         const lngs = res.cells.map((c) => c.lng);

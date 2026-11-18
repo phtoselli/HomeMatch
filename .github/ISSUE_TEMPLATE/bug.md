@@ -1,24 +1,24 @@
 ---
 name: Bug
-about: Algo não funciona como deveria
+about: Something does not work as it should
 labels: bug
 ---
 
-**O que aconteceu**
+**What happened**
 
-**O que você esperava**
+**What you expected**
 
-**Como reproduzir**
+**How to reproduce**
 
-1. Cidade:
-2. Endereço do trabalho (pode ser aproximado):
-3. Passos:
+1. City:
+2. Work address (can be approximate):
+3. Steps:
 
-**Onde**
+**Where**
 
-- [ ] Produção (Vercel)
+- [ ] Production (Vercel)
 - [ ] Local (`npm run dev` / `npm run app`)
 
-Navegador e aparelho:
+Browser and device:
 
-**Avisos ou erros mostrados na tela** (se houver)
+**Warnings or errors shown on screen** (if any)

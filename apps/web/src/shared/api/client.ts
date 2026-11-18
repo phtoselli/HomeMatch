@@ -17,24 +17,25 @@ import type {
   StreamEvent,
   TransitOperatorInfo,
 } from "@homematch/contracts";
+import { t } from "@homematch/i18n";
 
 const cityParams = (c?: CityRef | null, work?: LatLng | null): Record<string, string> => ({
   ...(c ? { cityId: c.osmId, cityName: c.name, ...(c.stateCode ? { uf: c.stateCode } : {}) } : {}),
-  // O trabalho pode ser em outra cidade: o operador de lá (ex.: EMDEC) também entra na busca de linhas.
+  // Work may be in another city: that city's operator (e.g. EMDEC) joins the line search too.
   ...(work ? { wlat: work.lat.toFixed(5), wlng: work.lng.toFixed(5) } : {}),
 });
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** No `npm run dev` o Vite sobe antes da API: enquanto isso o proxy responde 500/502/503/504 sem corpo JSON. */
+/** In `npm run dev` Vite starts before the API: meanwhile the proxy answers 500/502/503/504 without a JSON body. */
 async function fetchWhenUp(url: string, init?: RequestInit): Promise<Response> {
   for (let i = 0; ; i++) {
     const res = await fetch(url, init).catch(() => null);
     const starting =
       !res || ([500, 502, 503, 504].includes(res.status) && !res.headers.get("content-type")?.includes("json"));
     if (!starting || i >= 15) {
-      if (!res) throw new Error("Servidor da API fora do ar. Rode `npm run dev`.");
-      if (starting) throw new Error("A API não respondeu (ainda iniciando?). Tente de novo em alguns segundos.");
+      if (!res) throw new Error(t.ui.errors.apiDown);
+      if (starting) throw new Error(t.ui.errors.apiStarting);
       return res;
     }
     await sleep(1000);
@@ -54,7 +55,7 @@ export const api = {
   features: () => getJson<FeatureDef[]>("/api/features"),
   cities: (q: string) => getJson<PlaceResult[]>(`/api/cities?q=${encodeURIComponent(q)}`),
   city: (osmId: string) => getJson<City>(`/api/city/${osmId}`),
-  /** Portais + imobiliárias da cidade (a 1ª vez numa cidade leva ~30 s: visita o site de cada uma). */
+  /** Portals + the city's agencies (the first time in a city takes ~30 s: it visits each website). */
   sources: (city?: Pick<City, "osmId"> | null) =>
     getJson<SourcesResult>(`/api/sources${city ? `?cityId=${city.osmId}` : ""}`),
   geocode: (q: string, box?: BBox) => {
@@ -74,7 +75,7 @@ export const api = {
     if (box) for (const [k, v] of Object.entries(box)) p.set(k, String(v));
     return getJson<BusLine[]>(`/api/bus?${p}`);
   },
-  /** Grade de horários ("emdec:353"). */
+  /** Timetable ("emdec:353"). */
   timetable: (id: string) => getJson<LineTimetable>(`/api/bus/timetable?id=${encodeURIComponent(id)}`),
   busNear: (at: LatLng, city: CityRef, radius = 700) =>
     getJson<BusLine[]>(
@@ -84,7 +85,7 @@ export const api = {
     getJson<TransitOperatorInfo | null>(`/api/transit/operator?${new URLSearchParams(cityParams(city, work))}`),
 };
 
-/** POST que recebe NDJSON: chama `on` a cada evento e resolve com o resultado final. */
+/** POST that receives NDJSON: calls `on` for each event and resolves with the final result. */
 async function streamPost<T>(url: string, body: unknown, on: (ev: StreamEvent<T>) => void): Promise<T> {
   const res = await fetchWhenUp(url, {
     method: "POST",
@@ -114,6 +115,6 @@ async function streamPost<T>(url: string, body: unknown, on: (ev: StreamEvent<T>
     }
     if (done) break;
   }
-  if (result === undefined) throw new Error("A conexão terminou sem resultado.");
+  if (result === undefined) throw new Error(t.ui.errors.noResult);
   return result;
 }

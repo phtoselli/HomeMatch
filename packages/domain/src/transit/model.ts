@@ -1,16 +1,21 @@
-import type { LatLng, TransitMode, TransitRoute } from "@homematch/contracts";
+import type { LatLng, TransitMode, TransitRoute, TravelKind } from "@homematch/contracts";
+import { t } from "@homematch/i18n";
 import { PointIndex, distance } from "../geo.js";
 
 /**
- * Modelo de trajeto (sem GTFS): linhas diretas do OpenStreetMap que param perto do trabalho.
- * tempo = caminhada até a parada + espera média + viagem (distância entre paradas / velocidade) + caminhada até o trabalho.
- * É uma estimativa para comparar regiões, não um horário exato.
+ * Commute model (no GTFS): direct OpenStreetMap / operator lines that stop near work.
+ * time = walk to the stop + average wait + ride (distance between stops / speed) + walk to work.
+ * It is an estimate to compare regions, not an exact schedule.
  */
 export interface TransitParams {
-  walkSpeedMpm: number; // metros por minuto
-  walkDetour: number; // fator de desvio da caminhada sobre a linha reta
-  busWalkAtWorkM: number; // até onde vale descer do ônibus e andar até o trabalho
-  railWalkAtWorkM: number; // idem para metrô/trem
+  /** Meters per minute. */
+  walkSpeedMpm: number;
+  /** Detour factor of walking over the straight line. */
+  walkDetour: number;
+  /** How far one may get off the bus and walk to work. */
+  busWalkAtWorkM: number;
+  /** Same, for subway/train. */
+  railWalkAtWorkM: number;
 }
 
 export const DEFAULT_TRANSIT: TransitParams = {
@@ -26,45 +31,57 @@ interface ModeInfo {
   detour: number;
   rail: boolean;
   color: string;
-  label: string;
 }
 
 export const MODES: Record<TransitMode, ModeInfo> = {
-  bus: { speedKmh: 15, waitMin: 8, detour: 1.15, rail: false, color: "#1c7ed6", label: "Ônibus" },
-  trolleybus: { speedKmh: 15, waitMin: 8, detour: 1.15, rail: false, color: "#1098ad", label: "Trólebus" },
-  tram: { speedKmh: 18, waitMin: 6, detour: 1.1, rail: true, color: "#f59f00", label: "Bonde/VLT" },
-  light_rail: { speedKmh: 25, waitMin: 6, detour: 1.1, rail: true, color: "#f59f00", label: "VLT" },
-  monorail: { speedKmh: 30, waitMin: 5, detour: 1.05, rail: true, color: "#ae3ec9", label: "Monotrilho" },
-  subway: { speedKmh: 32, waitMin: 3, detour: 1.05, rail: true, color: "#e03131", label: "Metrô" },
-  train: { speedKmh: 35, waitMin: 8, detour: 1.05, rail: true, color: "#5f3dc4", label: "Trem" },
+  bus: { speedKmh: 15, waitMin: 8, detour: 1.15, rail: false, color: "#1c7ed6" },
+  trolleybus: { speedKmh: 15, waitMin: 8, detour: 1.15, rail: false, color: "#1098ad" },
+  tram: { speedKmh: 18, waitMin: 6, detour: 1.1, rail: true, color: "#f59f00" },
+  light_rail: { speedKmh: 25, waitMin: 6, detour: 1.1, rail: true, color: "#f59f00" },
+  monorail: { speedKmh: 30, waitMin: 5, detour: 1.05, rail: true, color: "#ae3ec9" },
+  subway: { speedKmh: 32, waitMin: 3, detour: 1.05, rail: true, color: "#e03131" },
+  train: { speedKmh: 35, waitMin: 8, detour: 1.05, rail: true, color: "#5f3dc4" },
 };
 
 export interface ParsedRoute extends TransitRoute {
   ptv2: boolean;
-  /** Paradas só de desembarque (mesmo índice de `path`): dá para descer, não para embarcar. */
+  /** Alight-only stops (same index as `path`): riders can get off there, not on. */
   alightOnly?: boolean[];
 }
 
+/** "Bus 353", or "Bus: <name>" for lines without a number (localized). */
 export function routeLabel(r: Pick<TransitRoute, "ref" | "name" | "mode">): string {
-  const kind = MODES[r.mode].label;
-  return r.ref ? `${kind} ${r.ref}` : `${kind}: ${r.name}`;
+  return t.transit.routeLabel(t.transit.modes[r.mode], r.ref, r.name);
 }
 
-/** Ponto de embarque com o menor tempo (espera + viagem + caminhada final) até o trabalho. */
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+/** Mode names ("Ônibus", "Metrô"…) longest first, so "Bonde/VLT" wins over "VLT". */
+const MODE_PREFIX = new RegExp(
+  `(${Object.values(t.transit.modes)
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRe)
+    .join("|")})[: ]\\s*`,
+  "g",
+);
+
+/** Drops the vehicle type from a route label: "Ônibus 350 + Ônibus 353" → "350 + 353"; "on foot" stays as it is. */
+export const shortVia = (via: string) => via.replace(MODE_PREFIX, "").trim();
+
+/** Boarding point with the shortest time (wait + ride + final walk) to work. */
 export interface BoardingStop extends LatLng {
   valueMin: number;
   routeId: string;
   label: string;
 }
 
-/** Baldeação: até onde andar entre o ponto de descida e o da segunda linha, e a folga extra. */
+/** Transfer: how far to walk between the stop you get off and the second line's stop, plus extra slack. */
 export const TRANSFER = { maxWalkM: 400, slackMin: 3 };
 
 type Exit = (pt: LatLng, rail: boolean) => { cost: number; via?: string } | null;
 
 /**
- * Programação dinâmica de trás para frente em cada sentido de cada linha:
- * tail[i] = viagem de i até i+1 + min(descer em i+1, seguir viagem). Gera o valor de embarcar em i.
+ * Backwards dynamic programming along each direction of each line:
+ * tail[i] = ride from i to i+1 + min(get off at i+1, keep riding). It yields the value of boarding at i.
  */
 function propagate(routes: ParsedRoute[], exit: Exit, best: Map<string, BoardingStop>) {
   for (const r of routes) {
@@ -99,7 +116,7 @@ function propagate(routes: ParsedRoute[], exit: Exit, best: Map<string, Boarding
         const s = pts[i]!;
         const key = `${s.lat.toFixed(5)},${s.lng.toFixed(5)}`;
         const cur = best.get(key);
-        const label = via[i] ? `${routeLabel(r)} + ${via[i]}` : routeLabel(r);
+        const label = via[i] ? t.transit.withTransfer(routeLabel(r), via[i]!) : routeLabel(r);
         if (!cur || v < cur.valueMin) best.set(key, { ...s, valueMin: v, routeId: r.id, label });
       }
     }
@@ -107,10 +124,9 @@ function propagate(routes: ParsedRoute[], exit: Exit, best: Map<string, Boarding
 }
 
 /**
- * Para cada parada de cada linha, o menor tempo de "embarcar aqui e chegar ao trabalho",
- * descendo em uma parada posterior que esteja a uma caminhada do trabalho.
- * Com `transfers`, também vale descer perto de outra linha que chegue lá (uma baldeação).
- * Linhas PTv1 (sem sentido definido) são avaliadas nos dois sentidos.
+ * For each stop of each line, the shortest "board here and reach work" time, getting off at a later stop within
+ * walking distance of work. With `transfers`, getting off near another line that reaches work also counts (one
+ * transfer). PTv1 lines (no defined direction) are evaluated both ways.
  */
 export function boardingStops(
   routes: ParsedRoute[],
@@ -130,7 +146,7 @@ export function boardingStops(
   );
   if (!opts.transfers || !direct.size) return [...direct.values()];
 
-  // Segunda passada: descer perto de um embarque direto e trocar de linha.
+  // Second pass: get off near a direct boarding stop and change lines.
   const idx = new PointIndex([...direct.values()], 500, work.lat);
   const all = new Map(direct);
   propagate(
@@ -150,11 +166,13 @@ export function boardingStops(
 
 export interface Commute {
   minutes: number;
+  travel: TravelKind;
+  /** Display label: "on foot" or the line(s). */
   via: string;
   routeId?: string;
 }
 
-/** Tempo estimado de um ponto até o trabalho: a pé ou pela melhor linha direta. */
+/** Estimated time from a point to work: on foot or by the best boarding stop within walking distance. */
 export function commuteFrom(
   from: LatLng,
   work: LatLng,
@@ -163,31 +181,29 @@ export function commuteFrom(
   p: TransitParams = DEFAULT_TRANSIT,
 ): Commute {
   const walk = (m: number) => (m * p.walkDetour) / p.walkSpeedMpm;
-  let best: Commute = { minutes: walk(distance(from, work)), via: "a pé" };
+  let best: Commute = { minutes: walk(distance(from, work)), travel: "walk", via: t.transit.onFoot };
   for (const { item, dist } of stops.within(from, maxWalkToStopM)) {
-    const t = walk(dist) + item.valueMin;
-    if (t < best.minutes) best = { minutes: t, via: item.label, routeId: item.routeId };
+    const minutes = walk(dist) + item.valueMin;
+    if (minutes < best.minutes) best = { minutes, travel: "transit", via: item.label, routeId: item.routeId };
   }
   return best;
 }
 
 /**
- * Estimativa reserva para cidades com poucas linhas mapeadas no OSM: se há ponto de ônibus perto
- * da casa e perto do trabalho, assume um ônibus (talvez com baldeação) em linha quase reta.
+ * Fallback estimate for cities with few lines mapped in OSM: if there is a bus stop near home and near work,
+ * assume a bus (maybe with a transfer) along an almost straight line.
  */
 export const GENERIC_BUS = {
   speedKmh: 15,
   waitMin: 8,
   transferSlackMin: 4,
   detour: 1.35,
-  label: "ônibus (estimado)",
-  /** Entre cidades: só o trecho dentro das cidades (somado, em linha reta) anda a 15 km/h; o resto é rodovia. */
+  /** Between cities: only the in-town part (summed, straight line) runs at 15 km/h; the rest is highway. */
   urbanM: 6000,
   roadSpeedKmh: 40,
-  roadLabel: "ônibus intermunicipal (estimado)",
 };
 
-/** Viagem de ônibus estimada por `d` metros em linha reta; entre cidades, o que passa de `urbanM` é rodovia. */
+/** Estimated bus ride over `d` straight-line meters; between cities, anything beyond `urbanM` is highway. */
 export function busRideMin(d: number, intercity: boolean): number {
   const mpm = (kmh: number) => (kmh * 1000) / 60;
   const urban = intercity ? Math.min(d, GENERIC_BUS.urbanM) : d;
@@ -209,6 +225,7 @@ export function genericBusCommute(
   const ride = busRideMin(distance(from, work), intercity);
   return {
     minutes: walk(near.dist) + GENERIC_BUS.waitMin + GENERIC_BUS.transferSlackMin + ride + walk(workStopDistM),
-    via: intercity ? GENERIC_BUS.roadLabel : GENERIC_BUS.label,
+    travel: "estimated",
+    via: intercity ? t.transit.estimatedIntercityBus : t.transit.estimatedBus,
   };
 }

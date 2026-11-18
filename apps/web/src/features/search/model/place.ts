@@ -4,6 +4,7 @@ import { api } from "@/shared/api/client";
 import { persistFields, readSaved } from "@/shared/lib/persist";
 import { useMapView } from "@/features/map";
 import { useSearchStore } from "./search";
+import { t } from "@homematch/i18n";
 
 export type Work = LatLng & { label?: string };
 
@@ -13,13 +14,13 @@ interface PlaceState {
   loadingCity: boolean;
   chooseCity: (osmId: string) => Promise<void>;
   chooseWork: (pl: PlaceResult) => void;
-  /** Trabalho marcado com um clique no mapa (o nome do lugar chega depois). */
+  /** Work marked with a click on the map (the place name arrives later). */
   pickWork: (p: LatLng) => Promise<void>;
 }
 
 const shortLabel = (displayName: string) => displayName.split(",").slice(0, 3).join(",");
 
-/** A cidade e o trabalho: o ponto de partida de toda busca. */
+/** The city and the work location: the starting point of every search. */
 export const usePlace = create<PlaceState>()((set) => ({
   city: readSaved<City | null>("city", null),
   work: readSaved<Work | null>("work", null),
@@ -47,7 +48,7 @@ export const usePlace = create<PlaceState>()((set) => ({
 
   async pickWork(p) {
     useMapView.getState().setPickingWork(false);
-    set({ work: { ...p, label: "Ponto marcado no mapa" } });
+    set({ work: { ...p, label: t.ui.search.pointOnMap } });
     const r = await api.reverse(p).catch(() => null);
     if (r) set({ work: { ...p, label: shortLabel(r.displayName) } });
   },

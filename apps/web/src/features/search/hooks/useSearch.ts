@@ -3,12 +3,12 @@ import { useSources } from "@/shared/api/queries";
 import { usePlace } from "../model/place";
 import { useSearchStore } from "../model/search";
 
-/** Antes de saber o que a cidade tem (ou se a descoberta falhar): os portais. */
+/** Before knowing what the city has (or if discovery fails): the portals. */
 const FALLBACK_SOURCES: SourceId[] = ["quintoandar", "chavesnamao", "zapimoveis", "vivareal", "lopes", "olx"];
 
 /**
- * A busca como os componentes a usam: o store (pedido + resultados) mais as fontes da cidade.
- * Fontes = todas as que dá para ler na cidade, menos as que a pessoa desmarcou.
+ * The search as components use it: the store (request + results) plus the city's sources.
+ * Sources = every readable source in the city, minus the ones the user unchecked.
  */
 export function useSearch() {
   const store = useSearchStore();

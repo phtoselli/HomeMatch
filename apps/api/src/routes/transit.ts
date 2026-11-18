@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { timetableIdSchema, type BBox, type CityRef, type LatLng } from "@homematch/contracts";
 import { padBBox } from "@homematch/domain";
+import { t } from "@homematch/i18n";
 import {
   cityAt,
   findBusLines,
@@ -13,12 +14,12 @@ import {
 import { HttpProblem } from "../plugins/errors.js";
 import { bboxFrom, bboxQuery, cityFrom, cityQuery, latQuery, lngQuery } from "./query.js";
 
-/** Trabalho (opcional) na query string: se fica em outra cidade, o operador de lá também entra. */
+/** Work location (optional) in the query string: when it is in another city, that city's operator is used too. */
 const workQuery = { wlat: latQuery.optional(), wlng: lngQuery.optional() };
 const workFrom = (q: { wlat?: number; wlng?: number }): LatLng | undefined =>
   q.wlat != null && q.wlng != null ? { lat: q.wlat, lng: q.wlng } : undefined;
 
-/** Operador da cidade de casa e o da cidade do trabalho (sem repetir). Morando em Paulínia: a EMDEC de Campinas. */
+/** Operators of the home city and of the work city (no repeats). Living in Paulínia: Campinas' EMDEC. */
 async function operatorsFor(city: CityRef | null, work?: LatLng): Promise<TransitOperator[]> {
   const home = operatorFor(city);
   const workCity = work ? await cityAt(work).catch(() => null) : null;
@@ -26,7 +27,7 @@ async function operatorsFor(city: CityRef | null, work?: LatLng): Promise<Transi
   return [...new Set([home, atWork].filter((o): o is TransitOperator => !!o))];
 }
 
-/** Área da busca no OpenStreetMap: a cidade e, se o trabalho fica fora dela, o trabalho também (com folga). */
+/** OpenStreetMap search area: the city and, when work is outside it, the work location too (with margin). */
 function searchArea(box: BBox | undefined, work?: LatLng): BBox | undefined {
   if (!box || !work) return box;
   const w = padBBox({ south: work.lat, north: work.lat, west: work.lng, east: work.lng }, 3000);
@@ -38,9 +39,9 @@ function searchArea(box: BBox | undefined, work?: LatLng): BBox | undefined {
   };
 }
 
-/** Linhas de ônibus: operador da cidade (ex.: EMDEC) primeiro, OpenStreetMap como reserva. */
+/** Bus lines: the city's operator (e.g. EMDEC) first, OpenStreetMap as fallback. */
 export async function transitRoutes(app: FastifyInstance) {
-  /** Quem publica as linhas de ônibus da cidade (null = só OpenStreetMap). */
+  /** Who publishes the city's bus lines (null = OpenStreetMap only). */
   app.get("/transit/operator", async (req) => {
     const q = z.object({ ...cityQuery, ...workQuery }).parse(req.query);
     return (await operatorsFor(cityFrom(q), workFrom(q)))[0]?.info ?? null;
@@ -48,11 +49,11 @@ export async function transitRoutes(app: FastifyInstance) {
 
   app.get("/bus", async (req) => {
     const q = z.object({ q: z.string().min(1).max(500), ...bboxQuery, ...cityQuery, ...workQuery }).parse(req.query);
-    // Id salvo de uma linha do operador ("emdec:353:1").
+    // Saved id of an operator line ("emdec:353:1").
     const byId = q.q.match(/^([a-z]+):(.+)$/);
     const saved = byId && operatorById(byId[1]!);
     if (saved) return saved.lineById(q.q);
-    // Site oficial da cidade de casa e da cidade do trabalho primeiro; sem resultado, OpenStreetMap (nas duas).
+    // Official sites of the home and work cities first; without results, OpenStreetMap (covering both).
     const work = workFrom(q);
     if (!/^https?:/i.test(q.q)) {
       for (const op of await operatorsFor(cityFrom(q), work)) {
@@ -63,18 +64,18 @@ export async function transitRoutes(app: FastifyInstance) {
     return findBusLines(q.q, searchArea(bboxFrom(q), work));
   });
 
-  /** Grade de horários de uma linha do operador ("emdec:353" ou "emdec:353:1"). */
+  /** Timetable of an operator line ("emdec:353" or "emdec:353:1"). */
   app.get("/bus/timetable", async (req) => {
     const { id } = z.object({ id: timetableIdSchema }).parse(req.query);
     const [opId, ref] = id.split(":") as [string, string];
     const op = operatorById(opId);
-    if (!op?.timetable) throw new HttpProblem(404, "Essa linha não tem grade de horários publicada pelo operador.");
-    const t = await op.timetable(ref);
-    if (!t) throw new HttpProblem(404, `Linha ${ref} não encontrada no site do operador.`);
-    return t;
+    if (!op?.timetable) throw new HttpProblem(404, t.api.noTimetable);
+    const timetable = await op.timetable(ref);
+    if (!timetable) throw new HttpProblem(404, t.api.lineNotFound(ref));
+    return timetable;
   });
 
-  /** Linhas que passam perto de um ponto (o trabalho). */
+  /** Lines passing near a point (work). */
   app.get("/bus/near", async (req) => {
     const q = z
       .object({
@@ -85,10 +86,10 @@ export async function transitRoutes(app: FastifyInstance) {
         ...cityQuery,
       })
       .parse(req.query);
-    // O operador é o da cidade onde fica o ponto (o trabalho pode ser na cidade vizinha), senão o da cidade de casa.
+    // The operator is the one of the point's city (work may be in a neighboring city), otherwise the home city's.
     const point = { lat: q.lat, lng: q.lng };
     const [op] = await operatorsFor(null, point).then(async (ops) => (ops.length ? ops : operatorsFor(cityFrom(q))));
-    // Sem operador cadastrado, as linhas do OpenStreetMap que param perto.
+    // Without a registered operator, the OpenStreetMap lines that stop nearby.
     if (!op) return findBusLinesNear(point, q.radius, q.max);
     return op.linesNear({ lat: q.lat, lng: q.lng }, q.radius, q.max);
   });

@@ -1,6 +1,6 @@
 /**
- * Link vindo de fora (anúncio, OpenStreetMap, site de operador) que pode virar `href` ou `src`: só http(s).
- * Barra `javascript:`, `data:` e afins, que num `href` rodariam código no app (XSS).
+ * Third-party link (listing, OpenStreetMap, operator website) that may become an `href` or `src`: http(s) only.
+ * Rejects `javascript:`, `data:` and similar schemes, which would run code in the app from an `href` (XSS).
  */
 export function safeExternalUrl(raw: string | null | undefined, base?: string): string | undefined {
   if (!raw) return undefined;

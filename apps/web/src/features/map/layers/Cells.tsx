@@ -1,11 +1,12 @@
 import L from "leaflet";
 import type { AnalysisResult, FeatureDef, RegionLevel } from "@homematch/contracts";
-import { LEVEL_LABEL, TRANSIT_CRITERION, atLeast, meters, noTransitNear } from "@homematch/domain";
+import { TRANSIT_CRITERION, atLeast, levelLabel, meters, noTransitNear } from "@homematch/domain";
+import { t } from "@homematch/i18n";
 import { LEVEL_COLOR } from "@/shared/lib/format";
 import { useLayer } from "../hooks/useLayer";
 import { esc } from "../lib/leaflet";
 
-/** Grade da análise: cada pedaço da cidade pintado pelo nível (excelente, boa, ok). */
+/** Analysis grid: each piece of the city painted by its level (excellent, good, ok). */
 export function Cells({
   analysis,
   features,
@@ -33,7 +34,7 @@ export function Cells({
           })
           .join("<br>");
         const transit = c.hits.includes(TRANSIT_CRITERION) ? "✓" : "✗";
-        const trip = noTransitNear(c) ? "sem ônibus por perto" : `~${c.commuteMin} min até o trabalho (${esc(c.via)})`;
+        const trip = noTransitNear(c) ? t.ui.results.noBusNearby : t.ui.map.cellCommute(c.commuteMin, esc(c.via));
         L.rectangle(
           [
             [c.lat - dLat, c.lng - dLng],
@@ -42,7 +43,7 @@ export function Cells({
           { renderer, stroke: false, fillColor: LEVEL_COLOR[c.level], fillOpacity: 0.3 + 0.25 * (c.score / 100) },
         )
           .bindTooltip(
-            `<b>${esc(c.region)}</b> · ${LEVEL_LABEL[c.level]}<br>${transit} ${trip}${feats ? `<br>${feats}` : ""}`,
+            `<b>${esc(c.region)}</b> · ${levelLabel(c.level)}<br>${transit} ${trip}${feats ? `<br>${feats}` : ""}`,
             { sticky: true },
           )
           .addTo(g);

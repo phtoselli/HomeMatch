@@ -4,15 +4,14 @@ export interface SearchArgs {
   city: Pick<City, "name" | "stateCode" | "bbox">;
   region: Pick<Region, "id" | "name" | "lat" | "lng" | "bbox">;
   max: number;
-  /** Filtros do imóvel: quem puder, manda para o site; o servidor reaplica depois em todos. */
+  /** Property filters: sources that can, send them to the site; the server re-applies them to all. */
   filters?: ListingFilters;
   log: (message: string) => void;
 }
 
 /**
- * Uma imobiliária/portal. Para adicionar um site novo: crie `<site>.ts` com um parse puro
- * (testado com fixture em tests/listings) e um `search` que só busca e chama o parse.
- * Depois registre em listings/index.ts.
+ * An agency/portal. To add a new site: create `<site>.ts` with pure parsing (tested with a fixture in
+ * test/listings) and a `search` that only fetches and calls the parser. Then register it in listings/index.ts.
  */
 export interface SourceAdapter {
   id: string;
@@ -20,5 +19,5 @@ export interface SourceAdapter {
   search(args: SearchArgs): Promise<Listing[]>;
 }
 
-/** O site bloqueou a leitura automática (403/429/captcha): não adianta tentar as outras regiões agora. */
+/** The site blocked automated reads (403/429/captcha): no point trying the other regions now. */
 export class SourceBlockedError extends Error {}

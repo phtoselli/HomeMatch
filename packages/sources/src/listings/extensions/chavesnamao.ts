@@ -1,19 +1,20 @@
+import type { PropertyType } from "@homematch/contracts";
 import { slugify } from "../normalize.js";
 import { parseSchemaOrgListings } from "../core/schemaorg.js";
 import type { SiteExtension } from "../core/types.js";
 
 /**
- * Chaves na Mão: portal com anúncios de muitas imobiliárias. A página de busca por bairro traz os
- * anúncios em schema.org (com coordenada e imobiliária), então o parse é o genérico.
- * O robots.txt do site proíbe URLs com "?" (inclusive a paginação "?pg="): só a 1ª página de cada bairro,
- * e por tipo de imóvel quando a pessoa escolheu um só.
+ * Chaves na Mão: a portal with listings from many agencies. The per-neighborhood search page has listings in
+ * schema.org (with coordinates and agency), so the generic parser is used. The site's robots.txt disallows URLs
+ * with "?" (including the "?pg=" pagination): only the first page of each neighborhood, and per property type when
+ * the user picked a single one.
  */
 const SITE = "https://www.chavesnamao.com.br";
 
-const TYPE_PATH: Record<string, string> = {
-  apartamento: "apartamentos-para-alugar",
-  casa: "casas-para-alugar",
-  casa_condominio: "casas-em-condominio-para-alugar",
+const TYPE_PATH: Partial<Record<PropertyType, string>> = {
+  apartment: "apartamentos-para-alugar",
+  house: "casas-para-alugar",
+  condo_house: "casas-em-condominio-para-alugar",
   studio: "kitnets-para-alugar",
 };
 

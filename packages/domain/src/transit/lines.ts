@@ -1,9 +1,10 @@
 import type { BusLine, LatLng, RouteKind, TransitMode, TransitRoute } from "@homematch/contracts";
+import { LOCALE_TAG, t } from "@homematch/i18n";
 import { distance } from "../geo.js";
 
-/** Uma linha de ônibus como a pessoa pensa nela: o número, com os dois sentidos juntos. */
+/** A bus line the way people think of it: the number, with both directions together. */
 export interface LineSummary {
-  /** Chave da linha (número; sem número, o id). É o que liga/desliga no mapa. */
+  /** Line key (the number; without one, the id). It is what toggles the line on the map. */
   key: string;
   ref?: string;
   name: string;
@@ -12,24 +13,24 @@ export interface LineSummary {
   operator?: string;
   website?: string;
   directions: { id: string; from?: string; to?: string; stops: number }[];
-  /** work = a análise usa para chegar ao trabalho; mine = você adicionou. */
+  /** work = the analysis uses it to reach work; mine = the user added it. */
   roles: ("work" | "mine")[];
-  /** Papel na análise (o mais forte entre os sentidos): passa perto do trabalho, intermunicipal… */
+  /** Role in the analysis (the strongest among its directions): near work, intercity… */
   kind?: RouteKind;
-  /** Id para pedir a grade de horários ("emdec:353"), quando o operador publica. */
+  /** Id to request the timetable ("emdec:353"), when the operator publishes one. */
   timetableId?: string;
 }
 
 export const lineKey = (x: { ref?: string; id: string }) => x.ref ?? x.id;
 
-const generic = (name: string, ref?: string) => !name || name === `Linha ${ref}`;
+const generic = (name: string, ref?: string) => !name || (!!ref && name === t.transit.lineName(ref));
 const timetableOf = (id: string) =>
   id
     .match(/^([a-z]+):([^:]+)/i)
     ?.slice(1, 3)
     .join(":");
 
-/** Junta as linhas da análise e as que a pessoa adicionou, por número. */
+/** Merges the analysis lines and the ones the user added, by number. */
 export function summarizeLines(routes: TransitRoute[], mine: BusLine[]): LineSummary[] {
   const byKey = new Map<string, LineSummary>();
   const get = (x: { id: string; ref?: string; name: string; color: string; mode: TransitMode; operator?: string }) => {
@@ -66,30 +67,31 @@ export function summarizeLines(routes: TransitRoute[], mine: BusLine[]): LineSum
     if (!s.directions.some((d) => d.id === r.id)) s.directions.push({ id: r.id, stops: r.path.length });
     if (r.kind && kindRank(r.kind) < kindRank(s.kind)) s.kind = r.kind;
   }
-  // Primeiro as que passam perto do trabalho, depois as intermunicipais, os trechos estimados, as de baldeação e
-  // as que você adicionou; dentro de cada grupo, pelo número.
+  // Lines near work first, then intercity lines, estimated legs, transfer lines and the ones the user added;
+  // within each group, by number.
   return [...byKey.values()].sort(
     (a, b) =>
       kindRank(a.kind) - kindRank(b.kind) ||
-      (a.ref ?? a.name).localeCompare(b.ref ?? b.name, "pt-BR", { numeric: true }),
+      (a.ref ?? a.name).localeCompare(b.ref ?? b.name, LOCALE_TAG, { numeric: true }),
   );
 }
 
 const KIND_ORDER: RouteKind[] = ["nearWork", "intercity", "estimated", "feeder"];
 const kindRank = (k: RouteKind | undefined) => (k ? KIND_ORDER.indexOf(k) : KIND_ORDER.length);
 
-/** Texto curto do papel da linha ("passa perto do trabalho", "intermunicipal"…). */
+/** Short text for the line's role ("near work", "intercity"…), localized. */
 export function lineRoleLabel(l: Pick<LineSummary, "kind" | "roles">): string {
+  const roles = t.transit.lineRoles;
   const parts: string[] = [];
-  if (l.kind === "nearWork") parts.push("passa perto do trabalho");
-  else if (l.kind === "intercity") parts.push("intermunicipal");
-  else if (l.kind === "estimated") parts.push("trecho estimado");
-  else if (l.roles.includes("work")) parts.push("leva ao trabalho");
-  if (l.roles.includes("mine")) parts.push("você adicionou");
+  if (l.kind === "nearWork") parts.push(roles.nearWork);
+  else if (l.kind === "intercity") parts.push(roles.intercity);
+  else if (l.kind === "estimated") parts.push(roles.estimated);
+  else if (l.roles.includes("work")) parts.push(roles.toWork);
+  if (l.roles.includes("mine")) parts.push(roles.mine);
   return parts.join(" · ");
 }
 
-/** Parada mais próxima de uma linha (até 3 km). */
+/** Closest stop of a line (up to 3 km). */
 export function nearestStop(line: Pick<BusLine, "stops">, p: LatLng): { name?: string; dist: number } | null {
   let best: { name?: string; dist: number } | null = null;
   for (const s of line.stops) {

@@ -1,13 +1,14 @@
 import { parseHTML } from "linkedom";
-import type { LatLng, Listing } from "@homematch/contracts";
+import type { AmenityId, LatLng, Listing } from "@homematch/contracts";
 import { padBBox } from "@homematch/domain";
 import { BROWSER_UA, DAY, HOUR, cached, httpFetch } from "../http.js";
 import { geocodeInBox } from "../osm/nominatim.js";
 import { detectAmenities, firstInt, normalizeType, parseBRL, slugify } from "./normalize.js";
 import { SourceBlockedError, type SourceAdapter } from "./types.js";
+import { t } from "@homematch/i18n";
 
-// VivaReal: página pública de busca por bairro. Os cards trazem preço, área, quartos e rua;
-// a coordenada vem de geocodificar "rua, bairro, cidade" no Nominatim.
+// VivaReal: public search page per neighborhood. Cards carry price, area, bedrooms and street;
+// coordinates come from geocoding "street, neighborhood, city" with Nominatim.
 const SITE = "https://www.vivareal.com.br";
 const PER_PAGE = 30;
 const ZONES = ["zona-sul", "zona-oeste", "zona-norte", "zona-leste", "centro"];
@@ -28,12 +29,12 @@ export interface VrCard {
   street?: string;
   location?: string; // "Pinheiros, São Paulo"
   image?: string;
-  amenities?: string[];
+  amenities?: AmenityId[];
 }
 
 const cy = (el: Element, name: string) => el.querySelector(`[data-cy="${name}"]`)?.textContent?.trim() ?? "";
 
-/** Parse puro do HTML de uma página de busca do VivaReal. */
+/** Pure parsing of a VivaReal search page. */
 export function parseVivaReal(html: string): VrCard[] {
   const { document } = parseHTML(html);
   const out: VrCard[] = [];
@@ -44,17 +45,17 @@ export function parseVivaReal(html: string): VrCard[] {
     if (!id) continue;
     const priceTxt = cy(card, "rp-cardProperty-price-txt");
     const rent = parseBRL(priceTxt.split("/")[0]);
-    if (!rent) continue; // "sob consulta" ou sem preço: não dá para filtrar
+    if (!rent) continue; // "price on request" or no price: cannot be filtered
     const title = (a?.getAttribute("title") ?? cy(card, "card-property-content")).replace(/\s+/g, " ").trim();
     const url = new URL(href, SITE);
     url.search = "";
-    // O card só tem título/resumo: o que achar ali vale, mas ausência não quer dizer "não tem".
+    // The card only has a title/summary: what is found counts, but absence does not mean "does not have".
     const found = detectAmenities(`${title} ${cy(card, "card-property-content")}`);
     out.push({
       id,
       url: url.toString(),
       title,
-      typeLabel: title.split(/ para (alugar|venda)/i)[0]!.trim() || "Imóvel",
+      typeLabel: title.split(/ para (alugar|venda)/i)[0]!.trim() || t.links.property,
       rent,
       condo: parseBRL(priceTxt.match(/Cond\.\s*R\$\s*[\d.,]+/i)?.[0]),
       iptu: parseBRL(priceTxt.match(/IPTU\s*R\$\s*[\d.,]+/i)?.[0]),
@@ -71,38 +72,36 @@ export function parseVivaReal(html: string): VrCard[] {
   return out;
 }
 
-/** Depois de um bloqueio, espera antes de tentar de novo (não insiste a cada região). */
+/** After a block, wait before trying again (do not insist on every region). */
 const BLOCK_COOLDOWN_MS = 15 * 60_000;
 let blockedUntil = 0;
 
 async function getPage(url: string): Promise<{ status: number; html: string }> {
   return cached("vivareal", url, 6 * HOUR, async () => {
     if (Date.now() < blockedUntil) {
-      throw new SourceBlockedError(
-        "o VivaReal bloqueou a leitura automática há pouco; tente de novo em alguns minutos",
-      );
+      throw new SourceBlockedError(t.sources.blockedRecently);
     }
     const res = await httpFetch(url, {
       minIntervalMs: 2000,
       retries: 1,
       headers: { "User-Agent": BROWSER_UA, "Accept-Language": "pt-BR,pt;q=0.9" },
     });
-    // Bloqueio (403/429) não vai para o cache: é passageiro e não significa "bairro inexistente".
+    // A block (403/429) is not cached: it is temporary and does not mean "unknown neighborhood".
     if (res.status === 403 || res.status === 429) {
       blockedUntil = Date.now() + BLOCK_COOLDOWN_MS;
-      throw new SourceBlockedError(`o VivaReal bloqueou a leitura automática (HTTP ${res.status}); tente mais tarde`);
+      throw new SourceBlockedError(t.sources.blocked(res.status));
     }
     return { status: res.status, html: res.ok ? await res.text() : "" };
   });
 }
 
-/** Descobre a URL de busca do bairro (cidades com zonas, como SP e RJ, usam /zona-x/ no caminho). */
-async function resolveRegionUrl(uf: string, city: string, bairro: string): Promise<string | null> {
-  const key = `${uf}/${city}/${bairro}`;
+/** Finds the neighborhood's search URL (cities with zones, like SP and RJ, use /zona-x/ in the path). */
+async function resolveRegionUrl(uf: string, city: string, neighborhood: string): Promise<string | null> {
+  const key = `${uf}/${city}/${neighborhood}`;
   return cached("vivareal-url", key, 30 * DAY, async () => {
     const candidates = [
-      `${SITE}/aluguel/${uf}/${city}/bairros/${bairro}/`,
-      ...ZONES.map((z) => `${SITE}/aluguel/${uf}/${city}/${z}/${bairro}/`),
+      `${SITE}/aluguel/${uf}/${city}/bairros/${neighborhood}/`,
+      ...ZONES.map((z) => `${SITE}/aluguel/${uf}/${city}/${z}/${neighborhood}/`),
     ];
     for (const url of candidates) {
       const { status, html } = await getPage(url);
@@ -112,7 +111,7 @@ async function resolveRegionUrl(uf: string, city: string, bairro: string): Promi
   });
 }
 
-/** Posição estável perto do centro da região quando o endereço não é encontrado. */
+/** Stable position near the region center when the address is not found. */
 function jitter(center: LatLng, seed: string): LatLng {
   let h = 0;
   for (const ch of seed) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
@@ -128,7 +127,7 @@ export const vivaReal: SourceAdapter = {
     const uf = (city.stateCode ?? "").toLowerCase();
     const base = await resolveRegionUrl(uf, slugify(city.name), slugify(region.name));
     if (!base) {
-      log(`VivaReal · ${region.name}: bairro não encontrado no site`);
+      log(t.sources.vivarealNoNeighborhood(region.name));
       return [];
     }
     const cards: VrCard[] = [];
@@ -137,7 +136,7 @@ export const vivaReal: SourceAdapter = {
       if (status !== 200) break;
       const got = parseVivaReal(html);
       cards.push(...got);
-      log(`VivaReal · ${region.name}: ${cards.length} anúncios`);
+      log(t.sources.listingsFound("VivaReal", region.name, cards.length));
       if (got.length < PER_PAGE) break;
     }
 

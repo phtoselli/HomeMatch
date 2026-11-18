@@ -1,16 +1,18 @@
 import { createHash } from "node:crypto";
 import { parseHTML } from "linkedom";
-import type { BBox, LatLng, Listing, ListingSource } from "@homematch/contracts";
+import type { AmenityId, BBox, LatLng, Listing, ListingSource } from "@homematch/contracts";
 import { padBBox, safeExternalUrl } from "@homematch/domain";
+import { t } from "@homematch/i18n";
 import { BROWSER_UA, HOUR, cached, httpFetch, readTextLimited } from "./http.js";
 import { assertPublicUrl } from "./net.js";
 import { detectAmenities, firstInt, normalizeType, parseBRL } from "./listings/normalize.js";
 import { geocodeInBox, searchAddress } from "./osm/nominatim.js";
 
 /**
- * "Meus links": recebe a URL de um anúncio (qualquer site) e tenta descobrir onde fica.
- * 1) coordenada do schema.org (JSON-LD `geo`) ou de meta tags — exata;
- * 2) senão, endereço (JSON-LD `address` ou breadcrumb) geocodificado no Nominatim — aproximada.
+ * Pasted links: takes a listing URL (any site) and tries to find where the property is.
+ * 1) schema.org coordinates (JSON-LD `geo`) or meta tags — exact;
+ * 2) otherwise, an address (JSON-LD `address` or breadcrumb) geocoded with Nominatim — approximate.
+ * Text patterns match Brazilian listing pages (Portuguese), which is the data being parsed.
  */
 export interface ExtractedInfo {
   title?: string;
@@ -24,8 +26,8 @@ export interface ExtractedInfo {
   image?: string;
   geo?: LatLng;
   address?: string;
-  /** Comodidades achadas na descrição; undefined quando a página não tem descrição. */
-  amenities?: string[];
+  /** Amenities found in the description; undefined when the page has no description. */
+  amenities?: AmenityId[];
 }
 
 type Json = Record<string, unknown>;
@@ -49,7 +51,7 @@ function validGeo(lat?: number, lng?: number): LatLng | undefined {
   return { lat, lng };
 }
 
-/** Parse puro do HTML de um anúncio. */
+/** Pure parsing of a listing's HTML. */
 export function extractListingInfo(html: string, pageUrl: string): ExtractedInfo {
   const { document } = parseHTML(html);
   const meta = (k: string) =>
@@ -98,7 +100,7 @@ export function extractListingInfo(html: string, pageUrl: string): ExtractedInfo
     }
   }
 
-  // Meta tags de geolocalização (alguns sites usam em vez do JSON-LD).
+  // Geolocation meta tags (some sites use them instead of JSON-LD).
   info.geo ??= validGeo(
     num(meta("place:location:latitude") ?? meta("og:latitude")),
     num(meta("place:location:longitude") ?? meta("og:longitude")),
@@ -109,7 +111,7 @@ export function extractListingInfo(html: string, pageUrl: string): ExtractedInfo
     if (m) info.geo = validGeo(Number(m[1]), Number(m[2]));
   }
   if (!info.geo) {
-    // Mapa embutido do Google (…q=-23.5,-46.6 / center=… / @-23.5,-46.6)
+    // Embedded Google map (…q=-23.5,-46.6 / center=… / @-23.5,-46.6)
     const m = html.match(/maps[^"'\s]*?(?:[?&](?:q|center|ll)=|@)(-?\d{1,2}\.\d{4,}),\s?(-?\d{1,3}\.\d{4,})/);
     if (m) info.geo = validGeo(Number(m[1]), Number(m[2]));
   }
@@ -129,7 +131,7 @@ export function extractListingInfo(html: string, pageUrl: string): ExtractedInfo
   info.image ??= meta("og:image");
   info.image = safeExternalUrl(info.image, pageUrl);
 
-  // QuintoAndar: o estado da página traz condomínio e custo total ao lado do aluguel.
+  // QuintoAndar: the page state has the condo fee and total cost next to the rent.
   if (info.rent) {
     const i = html.indexOf(`"rentPrice":${info.rent}`);
     if (i >= 0) {
@@ -143,7 +145,7 @@ export function extractListingInfo(html: string, pageUrl: string): ExtractedInfo
   }
 
   if (!info.address && breadcrumb.length > 2) {
-    // ex.: Aluguel › SP › São Paulo › Zona Oeste › Pinheiros › Rua Cardeal Arcoverde
+    // e.g. Aluguel › SP › São Paulo › Zona Oeste › Pinheiros › Rua Cardeal Arcoverde
     const parts = breadcrumb
       .slice(1)
       .map((n) => n.replace(/^.*\b(para alugar|para venda|à venda|a venda)\s+(em|no|na)\s+/i, "").trim())
@@ -154,7 +156,7 @@ export function extractListingInfo(html: string, pageUrl: string): ExtractedInfo
 }
 
 /**
- * Quando a página bloqueia a leitura, os links do VivaReal/ZAP ainda dizem muito:
+ * When the page blocks reading, VivaReal/ZAP links still say a lot:
  * /imovel/apartamento-2-quartos-pinheiros-zona-oeste-sao-paulo-com-garagem-82m2-aluguel-RS7000-id-2909698438/
  */
 export function infoFromUrl(url: string): (ExtractedInfo & { typeWord?: string; place?: string }) | null {
@@ -180,7 +182,7 @@ export function sourceOf(url: string): ListingSource {
   const h = new URL(url).hostname;
   if (h.endsWith("quintoandar.com.br")) return "quintoandar";
   if (h.endsWith("vivareal.com.br")) return "vivareal";
-  return "outro";
+  return "other";
 }
 
 function listingId(url: string, src: ListingSource): string {
@@ -193,12 +195,12 @@ function listingId(url: string, src: ListingSource): string {
     .slice(0, 12)}`;
 }
 
-/** Página de anúncio maior que isso não é anúncio (ou é um arquivo colado por engano). */
+/** A "listing page" larger than this is not one (or is a file pasted by mistake). */
 const MAX_PAGE_BYTES = 5_000_000;
 
 /**
- * Baixa uma URL colada pelo usuário seguindo os redirecionamentos um a um, conferindo cada destino. O IP de cada
- * conexão é conferido pelo `httpFetch` (`net.ts`), então nenhum caminho chega à rede local.
+ * Downloads a URL pasted by the user, following redirects one by one and checking each target. Each connection's
+ * IP is checked by `httpFetch` (`net.ts`), so no path reaches the local network.
  */
 async function fetchPublic(raw: string, maxRedirects = 5): Promise<{ res: Response; finalUrl: string }> {
   let url = assertPublicUrl(raw);
@@ -212,7 +214,7 @@ async function fetchPublic(raw: string, maxRedirects = 5): Promise<{ res: Respon
     const loc = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
     if (!loc) return { res, finalUrl: url.toString() };
     await res.body?.cancel();
-    if (hop >= maxRedirects) throw new Error("redirecionamentos demais");
+    if (hop >= maxRedirects) throw new Error(t.links.tooManyRedirects);
     url = assertPublicUrl(new URL(loc, url).toString());
   }
 }
@@ -225,20 +227,19 @@ export async function resolveLink(rawUrl: string, cityBox?: BBox): Promise<Listi
   try {
     page = await cached("links", url, 12 * HOUR, async () => {
       const { res, finalUrl } = await fetchPublic(url);
-      if (!res.ok) throw new Error(`o site respondeu ${res.status}`);
+      if (!res.ok) throw new Error(t.links.siteStatus(res.status));
       const type = res.headers.get("content-type") ?? "";
-      if (type && !/html|xml|text\/plain/i.test(type))
-        throw new Error(`o link não é uma página (${type.split(";")[0]})`);
+      if (type && !/html|xml|text\/plain/i.test(type)) throw new Error(t.links.notAPage(type.split(";")[0]!));
       return { finalUrl, html: await readTextLimited(res, MAX_PAGE_BYTES) };
     });
     info = extractListingInfo(page.html, page.finalUrl);
   } catch (e) {
-    // Página bloqueada/fora do ar: tenta o que dá para tirar do próprio link.
+    // Page blocked or down: use what the link itself tells.
     const fromUrl = infoFromUrl(url);
     if (!fromUrl) throw e;
     blocked = (e as Error).message;
     page = { finalUrl: url, html: "" };
-    info = { ...fromUrl, title: `${fromUrl.typeWord ?? "Imóvel"} em ${fromUrl.place}` };
+    info = { ...fromUrl, title: t.links.titleFromUrl(fromUrl.typeWord ?? t.links.property, fromUrl.place ?? "") };
   }
 
   let pos = info.geo;
@@ -252,10 +253,10 @@ export async function resolveLink(rawUrl: string, cityBox?: BBox): Promise<Listi
         .catch(() => undefined)) ??
       undefined;
   }
-  if (!pos) throw new Error("não achei a localização na página (sem coordenada nem endereço)");
+  if (!pos) throw new Error(t.links.noLocation);
 
   const src = sourceOf(page.finalUrl);
-  const title = info.title ?? "Imóvel";
+  const title = info.title ?? t.links.property;
   const rent = info.rent ?? 0;
   return {
     id: listingId(page.finalUrl, src),
@@ -263,7 +264,7 @@ export async function resolveLink(rawUrl: string, cityBox?: BBox): Promise<Listi
     url,
     title,
     type: normalizeType(`${title} ${page.finalUrl}`),
-    typeLabel: (title.split(/\s+(com|para|à|em)\s+/i)[0] ?? "Imóvel").replace(/^./, (c) => c.toUpperCase()),
+    typeLabel: (title.split(/\s+(com|para|à|em)\s+/i)[0] ?? t.links.property).replace(/^./, (c) => c.toUpperCase()),
     rent,
     total: rent + (info.condo ?? 0) + (info.iptu ?? 0),
     condo: info.condo,
@@ -272,7 +273,7 @@ export async function resolveLink(rawUrl: string, cityBox?: BBox): Promise<Listi
     bedrooms: info.bedrooms,
     bathrooms: info.bathrooms,
     parking: info.parking,
-    address: blocked ? `${info.address} (bairro — ${blocked}; dados tirados do link)` : info.address,
+    address: blocked ? t.links.addressFromUrl(info.address ?? "", blocked) : info.address,
     lat: pos.lat,
     lng: pos.lng,
     approxLocation: approx,

@@ -1,26 +1,26 @@
-# Segurança
+# Security
 
-## Como reportar uma vulnerabilidade
+## Reporting a vulnerability
 
-Não abra uma issue pública. Use a aba **Security → Report a vulnerability** do repositório no GitHub (aviso
-privado de segurança). Descreva o problema, como reproduzir e o impacto que você enxerga.
+Do not open a public issue. Use the **Security → Report a vulnerability** tab of the GitHub repository (private
+security advisory). Describe the problem, how to reproduce it and the impact you see.
 
-A resposta inicial deve sair em até 7 dias. Corrigido o problema, o aviso pode ser publicado com o crédito a quem
-reportou, se a pessoa quiser.
+You should get a first answer within 7 days. Once fixed, the advisory can be published crediting the reporter, if
+they want.
 
-## Versões cobertas
+## Supported versions
 
-Só a versão da branch `main` (a que está publicada) recebe correções.
+Only the `main` branch (the deployed version) gets fixes.
 
-## O que já é tratado
+## What is already handled
 
-- **Sem dados pessoais no servidor:** favoritos, filtros e endereço do trabalho ficam no `localStorage` do navegador.
-  O endereço só passa pela API durante a análise e não é guardado.
-- **SSRF:** "Meus links" baixa só endereços `http(s)` públicos. O texto da URL é conferido, cada redirecionamento
-  também, e o IP é conferido na hora da conexão (protege contra DNS rebinding). A página tem limite de tamanho.
-- **XSS:** links vindos de anúncios, do OpenStreetMap ou de sites de operadores só viram `href` se forem
-  `http(s)`. Textos de fora que vão para o mapa (tooltips do Leaflet) são escapados. A CSP só permite scripts do
-  próprio app.
-- **Entradas:** toda rota valida o corpo e os parâmetros com zod (`packages/contracts`), com limites de tamanho.
-- **Consultas ao Overpass:** texto do usuário entra nas consultas sempre escapado.
-- **Dependências:** o CI roda `npm audit` (dependências de produção, nível alto).
+- **No personal data on the server:** favorites, filters and the work address stay in the browser's `localStorage`.
+  The address only goes through the API during the analysis and is not stored. The PDF export is generated in the
+  browser.
+- **SSRF:** "My links" only downloads public `http(s)` addresses. The URL text is checked, so is every redirect,
+  and the IP is checked at connection time (protects against DNS rebinding). Pages have a size limit.
+- **XSS:** links from listings, OpenStreetMap or operator sites only become an `href` if they are `http(s)`.
+  Outside text shown on the map (Leaflet tooltips) is escaped. The CSP only allows the app's own scripts.
+- **Inputs:** every route validates its body and parameters with zod (`packages/contracts`), with size limits.
+- **Overpass queries:** user text is always escaped inside queries.
+- **Dependencies:** CI runs `npm audit` (production dependencies, high level).

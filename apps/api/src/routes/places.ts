@@ -4,7 +4,7 @@ import { osmIdSchema } from "@homematch/contracts";
 import { getCity, reverse, searchAddress, searchCities } from "@homematch/sources";
 import { bboxFrom, bboxQuery, latQuery, lngQuery } from "./query.js";
 
-/** Cidades e endereços (Nominatim, com cache e no máximo 1 req/s). */
+/** Cities and addresses (Nominatim, cached and at most 1 req/s). */
 export async function placesRoutes(app: FastifyInstance) {
   app.get("/cities", async (req) => {
     const { q } = z.object({ q: z.string().min(2).max(120) }).parse(req.query);

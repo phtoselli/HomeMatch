@@ -4,25 +4,25 @@ import { boardingStops } from "@homematch/domain";
 import { buildIntercityQuery, parseIntercity } from "../src/intercity.js";
 import type { OsmElement } from "../src/osm/overpass.js";
 
-// Resposta real do Overpass para Barueri (casa) → Osasco (trabalho), reduzida: a Linha 8 da CPTM nos dois
-// sentidos, 30 pontos de ônibus de Barueri e os terminais de Osasco.
+// Real Overpass response for Barueri (home) → Osasco (work), trimmed: CPTM Line 8 in both directions,
+// 30 bus stops in Barueri and the Osasco terminals.
 const fixture = JSON.parse(
   readFileSync(new URL("./fixtures/overpass-intercity-barueri-osasco.json", import.meta.url), "utf8"),
 ) as { elements: OsmElement[] };
 
-// Caixas simplificadas que separam as duas cidades (as bboxes de verdade se sobrepõem).
+// Simplified boxes that separate the two cities (the real bboxes overlap).
 const barueri = { bbox: { south: -23.56, north: -23.47, west: -46.95, east: -46.84 } };
 const osasco = { bbox: { south: -23.58, north: -23.48, west: -46.83, east: -46.73 } };
 
-describe("linhas intermunicipais (OpenStreetMap)", () => {
-  it("a consulta pede a interseção das linhas que param nas duas cidades e os terminais do destino", () => {
+describe("intercity lines (OpenStreetMap)", () => {
+  it("the query asks for the lines that stop in both cities and the destination terminals", () => {
     const q = buildIntercityQuery(barueri.bbox, osasco.bbox);
     expect(q).toMatch(/rel\.ra\([-0-9.,]+\)->\.r;\.r out geom;/);
     expect(q).toContain('nwr["amenity"="bus_station"]');
     expect(q).toContain(".sa out skel qt;");
   });
 
-  it("parseIntercity: linhas com traçado e paradas, pontos da cidade de casa e terminais", () => {
+  it("parseIntercity: lines with path and stops, home city stops and terminals", () => {
     const d = parseIntercity(fixture.elements, barueri, osasco);
     expect(d.routes).toHaveLength(2);
     const r = d.routes[0]!;
@@ -36,14 +36,14 @@ describe("linhas intermunicipais (OpenStreetMap)", () => {
     expect(d.stations.map((s) => s.name)).toContain("Estação Rodoviária de Osasco");
   });
 
-  it("descarta a linha que não para nas duas cidades", () => {
-    const elsewhere = { bbox: { south: -23.49, north: -23.48, west: -46.8, east: -46.79 } }; // norte de Osasco, longe da linha
+  it("drops a line that does not stop in both cities", () => {
+    const elsewhere = { bbox: { south: -23.49, north: -23.48, west: -46.8, east: -46.79 } }; // north of Osasco, far from the line
     expect(parseIntercity(fixture.elements, barueri, elsewhere).routes).toHaveLength(0);
   });
 
-  it("a linha encontrada leva de Barueri até um trabalho perto da estação de Osasco", () => {
+  it("the line found goes from Barueri to a workplace near Osasco station", () => {
     const { routes } = parseIntercity(fixture.elements, barueri, osasco);
-    const work = { lat: -23.5265, lng: -46.7765 }; // estação Osasco
+    const work = { lat: -23.5265, lng: -46.7765 }; // Osasco station
     const stops = boardingStops(routes, work);
     const inBarueri = stops.filter((s) => s.lng < -46.84);
     expect(inBarueri.length).toBeGreaterThan(0);

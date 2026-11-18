@@ -3,8 +3,9 @@ import { useMemo } from "react";
 import type { Region } from "@homematch/contracts";
 import { useLayer } from "../hooks/useLayer";
 import { esc } from "../lib/leaflet";
+import { t } from "@homematch/i18n";
 
-/** Selo numerado das melhores regiões; clique inclui ou tira a região da busca de imóveis. */
+/** Numbered badge of the best regions; a click adds or removes the region from the listing search. */
 export function RegionBadges({
   regions,
   selected,
@@ -29,9 +30,7 @@ export function RegionBadges({
         });
         L.marker([r.lat, r.lng], { icon, zIndexOffset: 500 - r.rank })
           .on("click", () => onToggle(r.id))
-          .bindTooltip(
-            `~${r.commuteMin} min até o trabalho · nota ${r.score.toFixed(0)}<br><small>clique para ${on ? "tirar da" : "incluir na"} busca de imóveis</small>`,
-          )
+          .bindTooltip(t.ui.map.regionBadge(r.commuteMin, r.score.toFixed(0), on))
           .addTo(g);
       }
     },

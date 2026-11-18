@@ -15,35 +15,35 @@ describe("normalize", () => {
   });
   it("normalizeType", () => {
     expect(normalizeType("StudioOuKitchenette")).toBe("studio");
-    expect(normalizeType("CasaCondominio")).toBe("casa_condominio");
-    expect(normalizeType("Casa de Condomínio")).toBe("casa_condominio");
-    expect(normalizeType("Sobrado")).toBe("casa");
-    expect(normalizeType("Apartamento")).toBe("apartamento");
-    expect(normalizeType("Cobertura")).toBe("apartamento");
+    expect(normalizeType("CasaCondominio")).toBe("condo_house");
+    expect(normalizeType("Casa de Condomínio")).toBe("condo_house");
+    expect(normalizeType("Sobrado")).toBe("house");
+    expect(normalizeType("Apartamento")).toBe("apartment");
+    expect(normalizeType("Cobertura")).toBe("apartment");
   });
 
-  it('normalizeType: vale a primeira palavra de tipo (bairro "Vila …" ou condomínio não viram casa)', () => {
+  it('normalizeType: the first type word wins (a "Vila …" neighbourhood or a condo does not become a house)', () => {
     expect(normalizeType("Apartamento com 2 quartos para alugar, 60m² - Vila Itapura, condomínio R$ 600")).toBe(
-      "apartamento",
+      "apartment",
     );
     expect(
       normalizeType(
         "Apartamento https://www.vivareal.com.br/imovel/apartamento-2-quartos-vila-industrial-campinas-60m2-aluguel-RS2200-id-1/",
       ),
-    ).toBe("apartamento");
-    expect(normalizeType("Casa em condomínio fechado, 3 quartos")).toBe("casa_condominio");
-    expect(normalizeType("Casa de vila no Cambuí")).toBe("casa_condominio");
-    expect(normalizeType("Casa com 2 quartos na Vila Nova")).toBe("casa");
+    ).toBe("apartment");
+    expect(normalizeType("Casa em condomínio fechado, 3 quartos")).toBe("condo_house");
+    expect(normalizeType("Casa de vila no Cambuí")).toBe("condo_house");
+    expect(normalizeType("Casa com 2 quartos na Vila Nova")).toBe("house");
     expect(normalizeType("Kitnet perto do apartamento modelo")).toBe("studio");
-    expect(normalizeType("Sala comercial")).toBe("outro");
+    expect(normalizeType("Sala comercial")).toBe("other");
   });
 });
 
 describe("QuintoAndar", () => {
-  it("parse da API de busca (fixture real)", () => {
+  it("parses the search API (real fixture)", () => {
     const json = JSON.parse(fx("quintoandar-list.json")) as QaResponse;
     const out = parseQuintoAndar(json);
-    // o 1º hit da fixture tem forRent=false e deve ser descartado
+    // the fixture's first hit has forRent=false and must be dropped
     expect(out.length).toBe(json.hits.hits.filter((h) => h._source.forRent !== false).length);
     const l = out[0]!;
     expect(l.id).toMatch(/^quintoandar:\d+$/);
@@ -54,7 +54,7 @@ describe("QuintoAndar", () => {
     expect(l.approxLocation).toBe(false);
   });
 
-  it("corpo da busca usa a bbox como viewport", () => {
+  it("the search body uses the bbox as viewport", () => {
     const b = buildQaBody({ south: -23.6, north: -23.5, west: -46.7, east: -46.6 }, "sao-paulo-sp-brasil", 50);
     expect(b.filters.location.viewport).toEqual({ east: -46.6, north: -23.5, south: -23.6, west: -46.7 });
     expect(b.pagination.offset).toBe(50);
@@ -63,7 +63,7 @@ describe("QuintoAndar", () => {
 });
 
 describe("VivaReal", () => {
-  it("parse dos cards da página de busca (fixture real)", () => {
+  it("parses the search page cards (real fixture)", () => {
     const cards = parseVivaReal(fx("vivareal-search.html"));
     expect(cards).toHaveLength(3);
     const c = cards[0]!;

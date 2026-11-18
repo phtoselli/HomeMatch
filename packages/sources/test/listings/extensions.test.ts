@@ -22,30 +22,30 @@ const region = {
 };
 
 describe("robots.txt", () => {
-  // Trechos reais (Chaves na Mão e um site Kenlo).
+  // Real excerpts (Chaves na Mão and a Kenlo site).
   const cnm = parseRobots(
     "User-agent: *\nAllow: /*?relatedAds=true$\nDisallow: /*?*\nDisallow: /api/\n\nUser-agent: Googlebot\nAllow: /",
   );
-  it("busca por bairro liberada, paginação com ? proibida", () => {
+  it("neighbourhood search allowed, pagination with ? disallowed", () => {
     expect(robotsAllows(cnm, "/imoveis-para-alugar/sp-campinas/taquaral/")).toBe(true);
     expect(robotsAllows(cnm, "/imoveis-para-alugar/sp-campinas/?pg=2")).toBe(false);
-    expect(robotsAllows(cnm, "/x?relatedAds=true")).toBe(true); // Allow mais específico ganha
+    expect(robotsAllows(cnm, "/x?relatedAds=true")).toBe(true); // the more specific Allow wins
   });
-  it("site que proíbe tudo para robôs (só o grupo * vale para nós)", () => {
+  it("a site that disallows everything for robots (only the * group applies to us)", () => {
     const kenlo = parseRobots("User-agent: *\nAllow: /ads.txt\nDisallow: /\n");
     expect(robotsAllows(kenlo, "/imoveis/para-alugar")).toBe(false);
     expect(robotsAllows(kenlo, "/ads.txt")).toBe(true);
     expect(robotsAllows(parseRobots("User-agent: *\nDisallow:\n"), "/aluguel/")).toBe(true);
   });
-  it("padrão com * no meio só vale se a ordem bater (OLX)", () => {
+  it("a pattern with * in the middle only matches in order (OLX)", () => {
     const r = parseRobots("User-agent: *\nDisallow: /*?*estado-*\nDisallow: /q/*");
     expect(robotsAllows(r, "/imoveis/aluguel/estado-sp/campinas?o=2")).toBe(true);
     expect(robotsAllows(r, "/busca?x=estado-sp")).toBe(false);
   });
 });
 
-describe("schema.org genérico", () => {
-  it("Chaves na Mão: Offer com itemOffered, coordenada e imobiliária", () => {
+describe("generic schema.org", () => {
+  it("Chaves na Mão: Offer with itemOffered, coordinates and agency", () => {
     const out = parseSchemaOrgListings(
       fx("chavesnamao-search.html"),
       "https://www.chavesnamao.com.br/imoveis-para-alugar/sp-campinas/",
@@ -53,21 +53,21 @@ describe("schema.org genérico", () => {
     expect(out.length).toBe(8);
     const withGeo = out.filter((r) => r.geo);
     expect(withGeo.length).toBeGreaterThan(5);
-    const casa = out.find((r) => r.id === "48086205")!;
-    expect(casa.rent).toBe(19500);
-    expect(casa.bedrooms).toBe(4);
-    expect(casa.neighbourhood).toBe("Loteamento Alphaville Campinas");
-    expect(casa.cityName).toBe("Campinas");
-    expect(casa.geo).toEqual({ lat: -22.9292, lng: -47.15616 });
-    expect(casa.agency).toBe("ANUNCIANTE EXEMPLO UM");
+    const house = out.find((r) => r.id === "48086205")!;
+    expect(house.rent).toBe(19500);
+    expect(house.bedrooms).toBe(4);
+    expect(house.neighbourhood).toBe("Loteamento Alphaville Campinas");
+    expect(house.cityName).toBe("Campinas");
+    expect(house.geo).toEqual({ lat: -22.9292, lng: -47.15616 });
+    expect(house.agency).toBe("ANUNCIANTE EXEMPLO UM");
   });
 
-  it("Sites do Mercado: Product + offers + additionalProperty (os de venda e aluguel também valem)", () => {
+  it("Sites do Mercado: Product + offers + additionalProperty (sale-and-rent ones count too)", () => {
     const out = parseSchemaOrgListings(fx("sitesdomercado-search.html"), "https://gallinari.com.br/imoveis/alugar/");
     expect(out.length).toBe(12);
     expect(out.every((r) => /aluguel/.test(r.url))).toBe(true);
-    const casa = out.find((r) => r.title === "Casa para alugar no Jardim Dom Nery em Campinas")!;
-    expect(casa).toMatchObject({
+    const house = out.find((r) => r.title === "Casa para alugar no Jardim Dom Nery em Campinas")!;
+    expect(house).toMatchObject({
       rent: 1350,
       bedrooms: 1,
       bathrooms: 1,
@@ -79,10 +79,10 @@ describe("schema.org genérico", () => {
     });
   });
 
-  it("Kenlo: RealEstateListing com oferta de venda e de aluguel", () => {
+  it("Kenlo: RealEstateListing with sale and rent offers", () => {
     const out = parseSchemaOrgListings(fx("kenlo-search.html"), "https://www.merola.com.br/imoveis/para-alugar");
     expect(out.length).toBeGreaterThan(3);
-    expect(out[0]!.rent).toBe(10000); // a oferta LeaseOut, não a de venda (2.000.000)
+    expect(out[0]!.rent).toBe(10000); // the LeaseOut offer, not the sale one (2,000,000)
     expect(out[0]!.cityName).toBe("Vinhedo");
   });
 
@@ -95,8 +95,8 @@ describe("schema.org genérico", () => {
   });
 });
 
-describe("extensões dos portais", () => {
-  it("ZAP usa o parse do VivaReal (mesma plataforma)", () => {
+describe("portal extensions", () => {
+  it("ZAP uses the VivaReal parser (same platform)", () => {
     const out = parseZap(fx("zap-search.html"));
     expect(out.length).toBe(5);
     expect(out[0]!.rent).toBeGreaterThan(0);
@@ -111,7 +111,7 @@ describe("extensões dos portais", () => {
     ).toBe("https://www.zapimoveis.com.br/aluguel/imoveis/sp+campinas++parque-taquaral/?precoMaximo=3200&pagina=2");
   });
 
-  it("Lopes: estado do Angular com coordenada e preços separados", () => {
+  it("Lopes: Angular state with coordinates and separate prices", () => {
     const out = parseLopes(fx("lopes-search.html"));
     expect(out.length).toBeGreaterThan(0);
     const r = out[0]!;
@@ -124,7 +124,7 @@ describe("extensões dos portais", () => {
     expect(lopes.url({ city, region, page: 2 })).toBeNull();
   });
 
-  it("OLX: cards com bairro (sem coordenada)", () => {
+  it("OLX: cards with neighbourhood (no coordinates)", () => {
     const out = parseOlx(fx("olx-search.html"));
     expect(out.length).toBe(6);
     expect(out[0]).toMatchObject({
@@ -142,9 +142,9 @@ describe("extensões dos portais", () => {
     expect(olx.url({ city, region, page: 3 })).toBe("https://www.olx.com.br/imoveis/aluguel/estado-sp/campinas?o=3");
   });
 
-  it("Chaves na Mão: só a 1ª página (robots.txt) e tipo no caminho", () => {
+  it("Chaves na Mão: only the first page (robots.txt) and type in the path", () => {
     const f = {
-      types: ["apartamento" as const],
+      types: ["apartment" as const],
       priceMin: null,
       priceMax: null,
       basis: "total" as const,
@@ -157,22 +157,22 @@ describe("extensões dos portais", () => {
   });
 });
 
-describe("motor", () => {
-  it("bairros com nome parecido casam; diferentes não", () => {
+describe("engine", () => {
+  it("neighbourhoods with similar names match; different ones do not", () => {
     expect(sameName("Taquaral", "Parque Taquaral")).toBe(true);
     expect(sameName("Cambuí", "cambui")).toBe(true);
     expect(sameName("Vila Brandina", "Parque Taquaral")).toBe(false);
     expect(sameName("Centro", "Jardim Centenário")).toBe(false);
   });
 
-  it("sala, galpão e terreno não são moradia", () => {
+  it("offices, warehouses and land are not homes", () => {
     expect(isHome({ typeLabel: "Galpão" })).toBe(false);
     expect(isHome({ title: "Salão para alugar no Taquaral em Campinas" })).toBe(false);
     expect(isHome({ title: "Apartamento com escritório - Taquaral" })).toBe(true);
     expect(isHome({ typeLabel: "Kitnet" })).toBe(true);
   });
 
-  it("toListing soma o total, detecta itens e põe o prefixo da fonte", () => {
+  it("toListing sums the total, detects items and adds the source prefix", () => {
     const l = toListing(
       { id: "1", url: "https://x", title: "Apartamento com cozinha planejada", rent: 2000, condo: 500, iptu: 80 },
       { id: "site:x.com.br", label: "X" },
@@ -184,12 +184,12 @@ describe("motor", () => {
       source: "site:x.com.br",
       sourceLabel: "X",
       total: 2580,
-      type: "apartamento",
-      amenities: ["armario_cozinha"],
+      type: "apartment",
+      amenities: ["kitchen_cabinets"],
     });
   });
 
-  it("busca pela cidade inteira: sem coordenada, só fica o anúncio do bairro da região (no centro dele)", async () => {
+  it("city-wide search: without coordinates, only listings in the region's neighbourhood stay (at its centre)", async () => {
     const raws = [
       { id: "a", url: "https://x/a", title: "Casa", rent: 2000, neighbourhood: "Taquaral", cityName: "Campinas" },
       { id: "b", url: "https://x/b", title: "Casa", rent: 2000, neighbourhood: "Vila Brandina", cityName: "Campinas" },
@@ -202,14 +202,14 @@ describe("motor", () => {
     expect(Math.abs(out[0]!.lat - region.lat)).toBeLessThan(0.01);
   });
 
-  it("reconhece página de desafio (Cloudflare) como bloqueio", () => {
+  it("recognizes a challenge page (Cloudflare) as a block", () => {
     expect(isChallengePage("<html><head><title>Just a moment...</title>")).toBe(true);
     expect(isChallengePage(fx("chavesnamao-search.html"))).toBe(false);
   });
 });
 
-describe("descoberta de imobiliárias", () => {
-  it("acha a página de aluguel na home e a plataforma", () => {
+describe("agency discovery", () => {
+  it("finds the rental page on the home page and the platform", () => {
     const home = fx("sitesdomercado-home.html");
     expect(findRentalLink(home, "https://gallinari.com.br")).toBe("https://gallinari.com.br/imoveis/alugar/");
     expect(detectPlatform(home)).toBe("WordPress");
@@ -217,7 +217,7 @@ describe("descoberta de imobiliárias", () => {
     expect(detectPlatform(fx("kenlo-search.html"))).toBe("Kenlo");
   });
 
-  it("segue o link de próxima página", () => {
+  it("follows the next-page link", () => {
     expect(findNextLink(fx("sitesdomercado-search.html"), "https://gallinari.com.br/imoveis/alugar/", 1)).toBe(
       "https://gallinari.com.br/imoveis/alugar/page/2/",
     );

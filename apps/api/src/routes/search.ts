@@ -12,11 +12,11 @@ import { stream } from "../plugins/stream.js";
 import { analyze } from "../services/analysis.js";
 import { resolveLinks } from "../services/links.js";
 
-/** A busca: o que dá para pedir, regiões boas, imóveis nelas e links colados. */
+/** The search: what can be requested, good regions, listings in them and pasted links. */
 export async function searchRoutes(app: FastifyInstance) {
   app.get("/features", async () => FEATURES);
 
-  /** Portais + imobiliárias da cidade (descobertas no OpenStreetMap) e se dá para ler cada uma. */
+  /** Portals + the city's agencies (discovered in OpenStreetMap) and whether each one can be read. */
   app.get("/sources", async (req) => {
     const { cityId } = z.object({ cityId: osmIdSchema.optional() }).parse(req.query);
     if (!cityId) return { city: "", portals: portalSources(), agencies: [] };

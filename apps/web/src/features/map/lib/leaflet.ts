@@ -1,10 +1,10 @@
 import L from "leaflet";
 import type { LineHover } from "../types";
 
-/** Texto de fora (OSM, anúncios) vai para o HTML de tooltips e ícones do Leaflet: sempre escapado. */
+/** Third-party text (OSM, listings) going into Leaflet tooltip/icon HTML: always escaped. */
 export const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-/** Destaca a linha sob o mouse (mais grossa e por cima das outras) e avisa quem mostra o popover. */
+/** Highlights the hovered line (thicker and on top) and notifies whoever shows the popover. */
 export function hoverable(pl: L.Polyline, key: string, weight: number, onHover?: LineHover) {
   pl.on("mouseover", (e: L.LeafletMouseEvent) => {
     pl.setStyle({ weight: weight + 3, opacity: 1 });

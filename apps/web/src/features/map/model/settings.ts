@@ -1,26 +1,26 @@
 import { create } from "zustand";
 import { persistFields, readSaved } from "@/shared/lib/persist";
 
-/** O que o mapa mostra (salvo no navegador). */
+/** What the map shows (saved in the browser). */
 export interface MapSettings {
-  /** Quadradinhos coloridos com o nível de cada área (excelente, boa, ok). */
+  /** Colored squares with each cell's level (excellent, good, ok). */
   cells: boolean;
-  /** Nomes numerados das melhores regiões. */
+  /** Numbered names of the best regions. */
   badges: boolean;
-  /** Linhas de ônibus que a análise usou para chegar ao trabalho. */
+  /** Bus lines the analysis used to reach work. */
   routes: boolean;
-  /** Linhas que você pediu pelo número (ex.: 353) e os pontos delas. */
+  /** Lines the user requested by number (e.g. 353) and their stops. */
   myLines: boolean;
   stops: boolean;
-  /** Mercados, parques… (os escondidos ficam em hiddenPois). */
+  /** Groceries, parks… (hidden ones are in hiddenPois). */
   pois: boolean;
   hiddenPois: string[];
-  /** Linhas de ônibus escondidas (pelo número). */
+  /** Hidden bus lines (by number). */
   hiddenLines: string[];
-  /** Imóveis da busca e links colados. */
+  /** Search listings and pasted links. */
   listings: boolean;
   myLinks: boolean;
-  /** Limite da cidade e legenda. */
+  /** City boundary and legend. */
   boundary: boolean;
   legend: boolean;
 }
@@ -40,10 +40,10 @@ export const DEFAULT_MAP_SETTINGS: MapSettings = {
   legend: true,
 };
 
-/** Configurações salvas de versões antigas (só 4 camadas) continuam valendo. */
+/** Settings saved by older versions (only 4 layers) still load. */
 export function normalizeMapSettings(s: Partial<MapSettings> | null | undefined): MapSettings {
   const out = { ...DEFAULT_MAP_SETTINGS, ...(s ?? {}) };
-  // Versões antigas tinham a faixa de nota (ótimas/ok); agora o nível mínimo mora na busca.
+  // Older versions had a score band (great/ok); the minimum level now lives in the search store.
   delete (out as Partial<MapSettings> & { cellBand?: unknown }).cellBand;
   if (!Array.isArray(out.hiddenPois)) out.hiddenPois = [];
   if (!Array.isArray(out.hiddenLines)) out.hiddenLines = [];
@@ -53,7 +53,7 @@ export function normalizeMapSettings(s: Partial<MapSettings> | null | undefined)
 interface MapSettingsState {
   settings: MapSettings;
   setSettings: (s: MapSettings) => void;
-  /** Esconde uma linha de ônibus (pelo número). */
+  /** Hides a bus line (by number). */
   hideLine: (key: string) => void;
 }
 
