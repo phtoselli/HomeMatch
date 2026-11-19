@@ -64,6 +64,7 @@ export function TopBar(p: Props) {
       </nav>
       <div className="topbar-actions">
         <Segmented
+          className="mode-nav"
           label={msg.whatToSee}
           value={p.mode}
           onChange={p.setMode}

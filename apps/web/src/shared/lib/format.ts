@@ -4,19 +4,20 @@ import { t } from "@homematch/i18n";
 
 /** Color of each region level (map, legend and tags). */
 export const LEVEL_COLOR: Record<RegionLevel, string> = {
-  excellent: "hsl(140 70% 38%)",
-  good: "hsl(95 65% 45%)",
-  ok: "hsl(42 85% 52%)",
+  excellent: "#0B6E55",
+  good: "#4FA88A",
+  ok: "#7FA897",
 };
 
 /**
  * How each level's area is drawn (map and PDF). The areas nest (the "good" one covers the "excellent" one too), so
- * the fills add up: the best places come out darkest, with one outline per level instead of a grid of squares.
+ * the fills add up: the best places come out darkest. Levels differ by lightness, with a 1 px outline at most
+ * (`line` is its opacity); "ok" is only a light veil, with no outline.
  */
-export const AREA_STYLE: Record<RegionLevel, { fill: number; weight: number; dash?: string }> = {
-  ok: { fill: 0.07, weight: 1.2, dash: "5 5" },
-  good: { fill: 0.22, weight: 2 },
-  excellent: { fill: 0.3, weight: 2.6 },
+export const AREA_STYLE: Record<RegionLevel, { fill: number; weight: number; line: number }> = {
+  ok: { fill: 0.1, weight: 0, line: 0 },
+  good: { fill: 0.18, weight: 1, line: 0.55 },
+  excellent: { fill: 0.26, weight: 1, line: 0.7 },
 };
 
 /** Score color (0..100): yellow → green. */

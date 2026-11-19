@@ -101,7 +101,7 @@ export async function renderMapImage(input: MapImageInput): Promise<MapImage | n
   canvas.height = height;
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
-  ctx.fillStyle = "#f1f3f5";
+  ctx.fillStyle = "#f2f4f3";
   ctx.fillRect(0, 0, width, height);
 
   // Street tiles.
@@ -117,16 +117,21 @@ export async function renderMapImage(input: MapImageInput): Promise<MapImage | n
   const ok = loaded.filter((x) => x.img);
   for (const { img, x, y } of ok) ctx.drawImage(img!, x, y);
   const basemap = ok.length >= loaded.length / 2;
-  // Light veil so the colored overlays stand out over the streets.
-  ctx.fillStyle = "rgba(255,255,255,0.28)";
+  // Calm the streets (less color, a light veil) so the region areas stand out, like the map in the app.
+  ctx.save();
+  ctx.globalCompositeOperation = "saturation";
+  ctx.fillStyle = "rgba(128,128,128,0.6)";
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
+  ctx.fillStyle = "rgba(255,255,255,0.34)";
   ctx.fillRect(0, 0, width, height);
 
   // City boundary ([lng, lat] rings).
   if (input.city?.boundary) {
     ctx.save();
-    ctx.strokeStyle = "#495057";
-    ctx.lineWidth = 2;
-    ctx.setLineDash([10, 8]);
+    ctx.strokeStyle = "#5b6763";
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([8, 7]);
     for (const poly of input.city.boundary)
       for (const ring of poly) {
         ctx.beginPath();
@@ -140,7 +145,7 @@ export async function renderMapImage(input: MapImageInput): Promise<MapImage | n
     ctx.restore();
   }
 
-  // Level areas, nested like on the screen (ok → good → excellent), one outline per level.
+  // Level areas, nested like on the screen (ok → good → excellent): translucent fills, a hairline outline at most.
   const a = input.analysis;
   if (a) {
     const shown = a.cells.filter((c) => atLeast(c.level, input.minLevel));
@@ -159,14 +164,16 @@ export async function renderMapImage(input: MapImageInput): Promise<MapImage | n
         }
       ctx.fillStyle = LEVEL_COLOR[area.level];
       // A bit stronger than on screen: printed colors come out lighter.
-      ctx.globalAlpha = Math.min(0.5, style.fill * 1.8);
+      ctx.globalAlpha = Math.min(0.45, style.fill * 1.6);
       ctx.fill("evenodd");
-      ctx.globalAlpha = 0.9;
-      ctx.strokeStyle = LEVEL_COLOR[area.level];
-      ctx.lineWidth = style.weight * 1.5;
-      ctx.lineJoin = "round";
-      if (style.dash) ctx.setLineDash(style.dash.split(" ").map((n) => Number(n) * 1.5));
-      ctx.stroke();
+      if (style.weight > 0) {
+        // The image is printed ~8x smaller than its pixels: 2 px come out as a ~0.25 mm hairline.
+        ctx.globalAlpha = style.line;
+        ctx.strokeStyle = LEVEL_COLOR[area.level];
+        ctx.lineWidth = 2 * style.weight;
+        ctx.lineJoin = "round";
+        ctx.stroke();
+      }
       ctx.restore();
     }
   }
@@ -175,7 +182,7 @@ export async function renderMapImage(input: MapImageInput): Promise<MapImage | n
   const drawLine = (paths: [number, number][][], color: string, dashed: boolean) => {
     ctx.save();
     ctx.strokeStyle = color;
-    ctx.lineWidth = dashed ? 3 : 4;
+    ctx.lineWidth = dashed ? 3 : 3.5;
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
     ctx.globalAlpha = 0.9;
@@ -197,19 +204,22 @@ export async function renderMapImage(input: MapImageInput): Promise<MapImage | n
   for (const l of input.busLines) drawLine(l.segments, l.color, false);
 
   // Numbered regions (same numbers as the table).
-  ctx.font = "bold 15px system-ui, sans-serif";
+  ctx.font = `700 15px "Instrument Sans", system-ui, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   for (const r of input.regions) {
     const [x, y] = px(r);
     ctx.beginPath();
-    ctx.arc(x, y, 14, 0, Math.PI * 2);
+    ctx.arc(x, y, 15, 0, Math.PI * 2);
     ctx.fillStyle = "#ffffff";
+    ctx.shadowColor = "rgba(16,24,20,0.25)";
+    ctx.shadowBlur = 4;
     ctx.fill();
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = LEVEL_COLOR[r.level];
+    ctx.shadowColor = "transparent";
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "#16211d";
     ctx.stroke();
-    ctx.fillStyle = "#212529";
+    ctx.fillStyle = "#16211d";
     ctx.fillText(String(r.rank), x, y + 1);
   }
 
@@ -218,7 +228,7 @@ export async function renderMapImage(input: MapImageInput): Promise<MapImage | n
     const [x, y] = px(input.work);
     ctx.beginPath();
     ctx.arc(x, y, 13, 0, Math.PI * 2);
-    ctx.fillStyle = "#212529";
+    ctx.fillStyle = "#16211d";
     ctx.fill();
     ctx.lineWidth = 3;
     ctx.strokeStyle = "#ffffff";
@@ -230,11 +240,11 @@ export async function renderMapImage(input: MapImageInput): Promise<MapImage | n
   // Tile attribution (required by the OpenStreetMap tile policy).
   if (basemap) {
     const text = t.ui.report.mapAttribution;
-    ctx.font = "13px system-ui, sans-serif";
+    ctx.font = `13px "Instrument Sans", system-ui, sans-serif`;
     const w = ctx.measureText(text).width + 12;
     ctx.fillStyle = "rgba(255,255,255,0.85)";
     ctx.fillRect(width - w, height - 22, w, 22);
-    ctx.fillStyle = "#495057";
+    ctx.fillStyle = "#5b6763";
     ctx.textAlign = "right";
     ctx.fillText(text, width - 6, height - 10);
   }

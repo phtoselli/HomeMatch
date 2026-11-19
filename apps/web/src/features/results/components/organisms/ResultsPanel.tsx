@@ -509,7 +509,8 @@ export function ResultsPanel(p: Props) {
                   <button type="button" className="region-btn" onClick={() => p.onFit(r.bbox)}>
                     <span className="rname">
                       {r.rank}. {r.name}
-                      <span className="rtag level" style={{ background: LEVEL_COLOR[r.level] }}>
+                      <span className="rtag level">
+                        <i style={{ background: LEVEL_COLOR[r.level] }} aria-hidden="true" />
                         {levelLabel(r.level)}
                       </span>
                     </span>

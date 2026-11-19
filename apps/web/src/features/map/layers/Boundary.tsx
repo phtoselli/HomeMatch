@@ -10,7 +10,14 @@ export function Boundary({ city, visible }: { city: City | null; visible: boolea
       const latlngs = city.boundary.map((poly) =>
         poly.map((ring) => ring.map(([lng, lat]) => [lat, lng] as [number, number])),
       );
-      L.polygon(latlngs, { color: "#495057", weight: 1.5, dashArray: "6 6", fill: false, interactive: false }).addTo(g);
+      L.polygon(latlngs, {
+        color: "#5b6763",
+        weight: 1.2,
+        opacity: 0.7,
+        dashArray: "5 6",
+        fill: false,
+        interactive: false,
+      }).addTo(g);
     },
     [city],
     visible,

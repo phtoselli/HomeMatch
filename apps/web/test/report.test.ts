@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AnalysisResult, City, Region } from "@homematch/contracts";
-import { DEFAULT_FILTERS, type Filters, type LineSummary } from "@homematch/domain";
+import { DEFAULT_FILTERS, money, type Filters, type LineSummary } from "@homematch/domain";
 import { t } from "@homematch/i18n";
 import { buildReportData, type ReportInput } from "@/features/report/lib/report-data";
 import { pdfText } from "@/features/report/lib/pdf";
@@ -107,6 +107,18 @@ describe("report data (PDF for a real estate agency)", () => {
     const d = buildReportData(input());
     expect(d.priorities.map((p) => p.name)).toEqual([msg.transit, "Parque"]);
     expect(d.priorities[0]!.importance).toBe(msg.importanceLabels[3]);
+  });
+
+  it("summary strip: city, short work label, budget and the main priority", () => {
+    const d = buildReportData(input());
+    expect(d.summary.map((r) => r.value)).toEqual([
+      "Campinas - SP",
+      "Av. Exemplo",
+      msg.budgetShort(money(2500)),
+      msg.transit,
+    ]);
+    expect(d.priorities.map((p) => p.level)).toEqual([3, 2]);
+    expect(d.year).toBe(input().date.getFullYear());
   });
 
   it("only regions at or above the chosen level, numbered like the map, with commute and lines", () => {

@@ -17,8 +17,16 @@ export const report = {
     "Este documento resume o que o cliente procura e onde: as regiões recomendadas pela análise de trajeto até o " +
     "trabalho e do que ele quer ter por perto, as linhas de ônibus que atendem essas regiões e os requisitos do " +
     "imóvel. Ele não traz anúncios: serve para a imobiliária buscar no próprio acervo.",
-  page: (n: number, total: number) => `Página ${n} de ${total}`,
-  footer: "Perfil gerado pelo HomeMatch a partir de dados abertos. Não contém anúncios nem links de imóveis.",
+  author: "Pedro Toselli",
+  copyright: (year: number, author: string) => `© ${year} ${author}`,
+
+  // ---- Summary strip under the title
+  summaryCity: "Cidade",
+  summaryWork: "Trabalho (referência)",
+  summaryBudget: "Valor mensal",
+  summaryPriority: "Prioridade",
+  budgetShort: (value: string) => `até ${value}`,
+  noLimit: "sem limite",
 
   // ---- Sections
   profileTitle: "1. O que o cliente procura",

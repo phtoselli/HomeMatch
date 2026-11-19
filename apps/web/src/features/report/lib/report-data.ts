@@ -67,9 +67,14 @@ export interface ReportData {
   title: string;
   subtitle: string;
   generatedOn: string;
+  /** Year for the copyright line. */
+  year: number;
   intro: string;
+  /** Four key facts shown in a strip under the title (city, work, budget, main priority). */
+  summary: ReportRow[];
   profile: ReportRow[];
-  priorities: { name: string; importance: string; detail: string }[];
+  /** `level`: 3 main, 2 important, 1 nice to have (drawn as bars). */
+  priorities: { name: string; importance: string; level: number; detail: string }[];
   regions: ReportRegion[];
   regionsNote: string;
   /** Regions drawn on the map (same numbers as the table). */
@@ -172,6 +177,7 @@ export function buildReportData(input: ReportInput): ReportData {
     .map(({ id, importance }) => ({
       name: id === TRANSIT_CRITERION ? msg.transit : featureLabel(id),
       importance: msg.importanceLabels[importance] ?? String(importance),
+      level: importance,
       detail: id === TRANSIT_CRITERION ? msg.transitDetail : msg.placeDetail(meters(chosen[id] ?? 0)),
     }));
 
@@ -233,7 +239,14 @@ export function buildReportData(input: ReportInput): ReportData {
     title: msg.title,
     subtitle: msg.subtitle(cityName),
     generatedOn: msg.generatedOn(dateFmt(date)),
+    year: date.getFullYear(),
     intro: msg.intro,
+    summary: [
+      { label: msg.summaryCity, value: cityName },
+      { label: msg.summaryWork, value: work?.label ? work.label.split(",")[0]! : "—" },
+      { label: msg.summaryBudget, value: f.budget ? msg.budgetShort(money(f.budget)) : msg.noLimit },
+      { label: msg.summaryPriority, value: priorities[0]?.name ?? "—" },
+    ],
     profile,
     priorities,
     regions,

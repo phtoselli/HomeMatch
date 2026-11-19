@@ -52,9 +52,9 @@ export function Cells({
           {
             renderer,
             color,
+            stroke: style.weight > 0,
             weight: style.weight,
-            opacity: 0.85,
-            dashArray: style.dash,
+            opacity: style.line,
             fillColor: color,
             fillOpacity: style.fill,
             lineJoin: "round",

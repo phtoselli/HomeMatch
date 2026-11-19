@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { REGION_LEVELS } from "@homematch/contracts/constants";
 import type { BusLine, FeatureDef, RegionLevel } from "@homematch/contracts";
 import { atLeast, levelLabel, meters } from "@homematch/domain";
@@ -55,7 +56,7 @@ export function Legend({
               .filter((l) => atLeast(l, minLevel))
               .map((l) => (
                 <span key={l}>
-                  <span className="lg-swatch" style={{ background: LEVEL_COLOR[l] }} />
+                  <span className="lg-swatch" data-level={l} style={{ "--c": LEVEL_COLOR[l] } as CSSProperties} />
                   {levelLabel(l)}
                 </span>
               ))}
