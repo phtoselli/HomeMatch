@@ -16,11 +16,22 @@ import { resolveLinks } from "../services/links.js";
 export async function searchRoutes(app: FastifyInstance) {
   app.get("/features", async () => FEATURES);
 
-  /** Portals + the city's agencies (discovered in OpenStreetMap) and whether each one can be read. */
+  /** Portals + the city's agencies (added by the user, known, or in OpenStreetMap) and whether each can be read. */
   app.get("/sources", async (req) => {
-    const { cityId } = z.object({ cityId: osmIdSchema.optional() }).parse(req.query);
+    const { cityId, extra } = z
+      .object({
+        cityId: osmIdSchema.optional(),
+        // Agency websites the user added (comma-separated); each one is still checked like any other site.
+        extra: z.string().max(2000).optional(),
+      })
+      .parse(req.query);
     if (!cityId) return { city: "", portals: portalSources(), agencies: [] };
-    return discoverSources(await getCity(cityId), (m) => req.log.info(m));
+    const sites = (extra ?? "")
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .slice(0, 10);
+    return discoverSources(await getCity(cityId), (m) => req.log.info(m), sites);
   });
 
   app.post("/analyze", async (req, reply) => {

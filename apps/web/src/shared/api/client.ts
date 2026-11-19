@@ -56,8 +56,12 @@ export const api = {
   cities: (q: string) => getJson<PlaceResult[]>(`/api/cities?q=${encodeURIComponent(q)}`),
   city: (osmId: string) => getJson<City>(`/api/city/${osmId}`),
   /** Portals + the city's agencies (the first time in a city takes ~30 s: it visits each website). */
-  sources: (city?: Pick<City, "osmId"> | null) =>
-    getJson<SourcesResult>(`/api/sources${city ? `?cityId=${city.osmId}` : ""}`),
+  sources: (city?: Pick<City, "osmId"> | null, extra: string[] = []) => {
+    const p = new URLSearchParams();
+    if (city) p.set("cityId", city.osmId);
+    if (city && extra.length) p.set("extra", extra.join(","));
+    return getJson<SourcesResult>(`/api/sources${p.size ? `?${p}` : ""}`);
+  },
   geocode: (q: string, box?: BBox) => {
     const p = new URLSearchParams({ q });
     if (box) for (const [k, v] of Object.entries(box)) p.set(k, String(v));

@@ -144,6 +144,12 @@ specific to the site:
 1. Create `packages/sources/src/listings/extensions/<site>.ts` exporting a `SiteExtension` (`core/types.ts`): the
    search page `url(ctx)` and a **pure** `parse(html)` returning `RawListing[]`. If the site publishes schema.org,
    just use `parseSchemaOrgListings`.
+
+Agency websites usually need no extension at all: `extensions/agency.ts` reads a rentals page from schema.org, the
+page's app state (`core/appstate.ts`, Next.js/Nuxt sites such as FlipCRM, Arbo, Imobzi) or its HTML cards
+(`core/cards.ts`, server-rendered sites such as Union). Discovery (`discovery.ts`) finds the rentals page and the
+per-neighborhood pages from the home page, the sitemap and the URL patterns of common platforms. Agencies come from
+the ones the user adds in the app, a list per city (`agencies-known.ts`) and OpenStreetMap.
 2. Save a trimmed real page in `packages/sources/test/fixtures/` and test the parser in
    `packages/sources/test/listings/extensions.test.ts`.
 3. Register it in `packages/sources/src/listings/index.ts` and describe it in `portals.ts`.

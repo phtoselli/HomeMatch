@@ -158,7 +158,9 @@ export function parseSchemaOrgListings(html: string, pageUrl: string): RawListin
   const out = new Map<string, RawListing>();
   const add = (r: Partial<RawListing>, src: Json) => {
     if (!r.rent || r.rent < 100) return; // no price or "price on request"
-    const url = safeExternalUrl(r.url, pageUrl);
+    // Some sites write the link without the scheme ("www.site.com.br/imovel/…"): not a relative path.
+    const link = r.url && /^(www\.|[a-z0-9-]+(\.[a-z0-9-]+)+\/)/i.test(r.url) ? `https://${r.url}` : r.url;
+    const url = safeExternalUrl(link, pageUrl);
     if (!url) return;
     const id = idFrom(url, src);
     if (out.has(id)) return;

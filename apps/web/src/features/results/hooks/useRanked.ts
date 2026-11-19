@@ -3,6 +3,7 @@ import { create } from "zustand";
 import type { Cell, LatLng, Listing } from "@homematch/contracts";
 import {
   atLeast,
+  LISTING_SLACK_M,
   distance,
   makeCellLookup,
   matchScore,
@@ -36,13 +37,14 @@ function useCellLookup() {
     if (!analysis) return null;
     const cells = analysis.cells.filter((c) => atLeast(c.level, minLevel));
     const exact = makeCellLookup(cells, analysis.cellSizeM);
-    const wide = makeCellLookup(cells, analysis.cellSizeM, analysis.cellSizeM * 1.25);
+    const exactM = Math.max(analysis.cellSizeM * 0.75, LISTING_SLACK_M);
+    const wide = makeCellLookup(cells, analysis.cellSizeM, (exactM * 5) / 3);
     return (l: LatLng): Cell | undefined => {
       const c = exact(l);
       if (c) return c;
       const near = wide(l);
       if (!near) return undefined;
-      const extra = Math.max(0, distance(l, near) - analysis.cellSizeM / 2);
+      const extra = Math.max(0, distance(l, near) - exactM * (2 / 3));
       return { ...near, commuteMin: near.commuteMin + walkMin(extra) };
     };
   }, [analysis, minLevel]);

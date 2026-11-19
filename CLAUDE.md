@@ -15,14 +15,17 @@ npm workspaces monorepo. Full design in [docs/architecture.md](docs/architecture
   the browser and the tests.
 - `packages/i18n`: text catalogs, no dependencies. Messages that take values are functions.
 - `packages/sources`: everything from outside. `http.ts` (pacing, cache in `DATA_DIR`), `osm/`, `operators/` (EMDEC),
-  `intercity.ts` (OSM intercity lines between two cities + terminals), `listings/`, `links.ts`. The API imports only
-  through the package's `index.ts`.
+  `intercity.ts` (OSM intercity lines between two cities + terminals), `listings/`, `links.ts` (pasted links; where
+  the property is comes from `listing-location.ts`, which skips the agency's own address: schema.org organizations,
+  offices in the app state, header and footer). The API imports only through the package's `index.ts`.
   - `listings/core/engine.ts` is the shared engine (robots.txt, pacing, cache, blocking, pagination, map position);
     `core/schemaorg.ts` reads schema.org (JSON-LD) listings from any site.
   - `listings/extensions/<site>.ts` holds only what is specific to each site: the search `url()` + a pure `parse()`
     (contract in `core/types.ts`). Register in `listings/index.ts` and `portals.ts`.
-  - `listings/discovery.ts` finds the city's agencies (OSM `office=estate_agent` with a website), recognizes the
-    platform and reads the ones that publish schema.org through the generic extension (`extensions/agency.ts`,
+  - `listings/discovery.ts` finds the city's agencies (added by the user in the app, `agencies-known.ts` per city,
+    OSM `office=estate_agent` with a website), recognizes the platform, finds the rentals page and the
+    per-neighborhood pages (home, sitemap, platform URL patterns) and reads them through the generic extension
+    (`extensions/agency.ts`: schema.org, else the app state `core/appstate.ts`, else HTML cards `core/cards.ts`;
     source `site:<host>`).
 - `apps/api`: Fastify. `app.ts` builds it (tests use `app.inject`), `main.ts` listens, `vercel.ts` is the same API as
   a Vercel function (bundled by `scripts/build-vercel.mjs`), `env.ts` validates configuration, `routes/` only

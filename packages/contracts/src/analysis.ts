@@ -84,6 +84,8 @@ export const analysisResultSchema = z.object({
     /** Best commute in the city and the commute that still counts as "transit met". */
     commuteBestMin: z.number(),
     commuteRefMin: z.number(),
+    /** Limit on a direct line (one bus all the way), above commuteRefMin. */
+    commuteDirectRefMin: z.number().optional(),
     stopsUsable: z.number(),
   }),
   warnings: z.array(z.string()),

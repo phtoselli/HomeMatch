@@ -87,9 +87,16 @@ by the user's criteria (`domain/analysis/levels.ts`): transit to work and each r
 
 - **Excellent**: the main criterion is met and so is at least 75% of the weight. **Good**: the main one. **Ok**:
   something else, but not the main one. Nothing met: the area is left out (and its listings do not show).
-- **Transit met**: commute up to `commuteRef` (the city's best × 1.5, at least 40 min) or a stop of a line chosen by
-  the user within walking distance. So, living in a neighbouring city, the best-served areas still count. A walk
-  longer than 60 minutes is never "transit".
+- **Transit met**: commute up to `commuteRef` (the city's best ride × 1.5, at least 45 min), or up to
+  `directRef` (50% more) on a **direct line**, one bus all the way with no transfer, or a stop of a line chosen by
+  the user within walking distance. The direct-line allowance keeps the neighborhoods along the line that stops at
+  work in the search even when they are a bit farther (Taquaral, Cambuí, Centro on line 353). Living in a
+  neighbouring city, the best-served areas still count. A walk longer than 60 minutes is never "transit".
+- **Grid**: 250 m cells, so the areas follow the streets near the stops. Listings still match a cell within 375 m
+  (portals blur addresses).
+- **On the map** (`domain/analysis/areas.ts`): the cells of each level are traced into outlines with rounded corners
+  (one shape per level instead of thousands of squares). Levels nest (the "good" area also covers the "excellent" one),
+  so the best places come out darkest. The same shapes go into the PDF.
 - **Place met**: the nearest one within the requested radius.
 - The score (0–100) sums the weights met, each by how well it was met, and sorts within the same level.
 

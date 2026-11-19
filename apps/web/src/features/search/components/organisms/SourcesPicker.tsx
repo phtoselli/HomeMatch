@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { SourceInfo } from "@homematch/contracts";
 import { safeExternalUrl } from "@homematch/domain";
 import { t } from "@homematch/i18n";
@@ -22,7 +23,17 @@ export function sourcesSummary(s: Search, cityName?: string): string {
   return msg.searchingIn(portals, agencies, a.city);
 }
 
-function Row({ x, on, onToggle }: { x: SourceInfo; on: boolean; onToggle: () => void }) {
+function Row({
+  x,
+  on,
+  onToggle,
+  onRemove,
+}: {
+  x: SourceInfo;
+  on: boolean;
+  onToggle: () => void;
+  onRemove?: () => void;
+}) {
   const ok = x.status === "ok";
   return (
     <li className="src-row" data-off={!ok || undefined}>
@@ -35,8 +46,59 @@ function Row({ x, on, onToggle }: { x: SourceInfo; on: boolean; onToggle: () => 
       </ExternalLink>
       {x.platform && <span className="src-tag">{x.platform}</span>}
       {!ok && <span className="src-tag warn">{msg.status[x.status]}</span>}
+      {onRemove && (
+        <button type="button" className="src-tag link" onClick={onRemove} aria-label={msg.removeAgency(x.label)}>
+          {msg.addedByYou} ✕
+        </button>
+      )}
       {x.note && <span className="src-note">{x.note}</span>}
     </li>
+  );
+}
+
+/** Field to add an agency's website the search does not know yet. */
+function AddAgency({ s }: { s: Search }) {
+  const [value, setValue] = useState("");
+  const [error, setError] = useState(false);
+  const add = () => {
+    const raw = value.trim();
+    const url = safeExternalUrl(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+    const host = url ? new URL(url).hostname : "";
+    if (!url || !host.includes(".")) return setError(true);
+    s.addAgency(new URL(url).origin);
+    setValue("");
+    setError(false);
+  };
+  return (
+    <form
+      className="src-add"
+      onSubmit={(e) => {
+        e.preventDefault();
+        add();
+      }}
+    >
+      <label className="hint" htmlFor="src-add-input">
+        {msg.addAgency}
+      </label>
+      <div className="row">
+        <input
+          id="src-add-input"
+          type="text"
+          inputMode="url"
+          value={value}
+          placeholder={msg.addAgencyPlaceholder}
+          onChange={(e) => {
+            setValue(e.target.value);
+            setError(false);
+          }}
+        />
+        <button type="submit" disabled={!value.trim()}>
+          {msg.addAgencyButton}
+        </button>
+      </div>
+      {error && <span className="hint warn">{msg.invalidSite}</span>}
+      {s.loadingSources && s.extraAgencies.length > 0 && <span className="hint">{msg.checkingSite}</span>}
+    </form>
   );
 }
 
@@ -69,13 +131,23 @@ export function SourcesPicker({ s, cityName }: { s: Search; cityName?: string })
           </h3>
           {a.agencies.length > 0 ? (
             <ul className="src-list">
-              {a.agencies.map((x) => (
-                <Row key={x.id} x={x} on={on.has(x.id)} onToggle={() => toggle(x.id)} />
-              ))}
+              {a.agencies.map((x) => {
+                const added = s.extraAgencies.find((site) => hostOf(site) === hostOf(x.site));
+                return (
+                  <Row
+                    key={x.id}
+                    x={x}
+                    on={on.has(x.id)}
+                    onToggle={() => toggle(x.id)}
+                    onRemove={added ? () => s.removeAgency(added) : undefined}
+                  />
+                );
+              })}
             </ul>
           ) : (
-            <p className="hint">{a.city ? msg.chooseCity : ""}</p>
+            <p className="hint">{a.city ? "" : msg.chooseCity}</p>
           )}
+          {a.city && <AddAgency s={s} />}
           <p className="hint">{msg.disclaimer}</p>
         </>
       )}

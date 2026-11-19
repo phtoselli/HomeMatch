@@ -152,7 +152,16 @@ export function buildReportData(input: ReportInput): ReportData {
     { label: msg.area, value: f.minArea ? msg.atLeastArea(f.minArea) : msg.noMinimum },
     { label: msg.mustHave, value: mustHave.length ? mustHave.join(", ") : msg.noMustHave },
     ...(analysis
-      ? [{ label: msg.commute, value: msg.commuteValue(analysis.stats.commuteBestMin, analysis.stats.commuteRefMin) }]
+      ? [
+          {
+            label: msg.commute,
+            value: msg.commuteValue(
+              analysis.stats.commuteBestMin,
+              analysis.stats.commuteRefMin,
+              analysis.stats.commuteDirectRefMin,
+            ),
+          },
+        ]
       : []),
   ];
 

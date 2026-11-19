@@ -9,6 +9,16 @@ export const LEVEL_COLOR: Record<RegionLevel, string> = {
   ok: "hsl(42 85% 52%)",
 };
 
+/**
+ * How each level's area is drawn (map and PDF). The areas nest (the "good" one covers the "excellent" one too), so
+ * the fills add up: the best places come out darkest, with one outline per level instead of a grid of squares.
+ */
+export const AREA_STYLE: Record<RegionLevel, { fill: number; weight: number; dash?: string }> = {
+  ok: { fill: 0.07, weight: 1.2, dash: "5 5" },
+  good: { fill: 0.22, weight: 2 },
+  excellent: { fill: 0.3, weight: 2.6 },
+};
+
 /** Score color (0..100): yellow → green. */
 export function scoreColor(score: number): string {
   const ratio = Math.max(0, Math.min(1, score / 100));

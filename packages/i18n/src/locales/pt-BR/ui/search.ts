@@ -43,9 +43,16 @@ export const sources = {
   portals: "Portais",
   agenciesOf: (city?: string) => `Imobiliárias ${city ? `de ${city}` : "da cidade"}`,
   readableOf: (readable: number, total: number) => `${readable} de ${total} dá para ler`,
-  noAgencies: "nenhuma com site no OpenStreetMap",
+  noAgencies: "nenhuma encontrada ainda",
+  addAgency: "Achou uma imobiliária que não está aqui? Cole o site dela:",
+  addAgencyPlaceholder: "ex.: www.imobiliaria.com.br",
+  addAgencyButton: "Adicionar",
+  invalidSite: "Esse endereço não parece um site.",
+  addedByYou: "adicionada por você",
+  removeAgency: (name: string) => `Tirar ${name} da lista`,
+  checkingSite: "Verificando o site…",
   chooseCity: "Escolha a cidade para procurar as imobiliárias dela.",
   disclaimer:
-    "As imobiliárias vêm do OpenStreetMap (escritórios cadastrados com site). Respeitamos o robots.txt de cada " +
-    "site e não contornamos bloqueios.",
+    "As imobiliárias vêm das que você adicionou, de uma lista por cidade e do OpenStreetMap. Respeitamos o " +
+    "robots.txt de cada site e não contornamos bloqueios.",
 };

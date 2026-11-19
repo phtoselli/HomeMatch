@@ -489,6 +489,7 @@ export function ResultsPanel(p: Props) {
                 a.stats.levels.ok,
                 a.stats.commuteBestMin,
                 a.stats.commuteRefMin,
+                a.stats.commuteDirectRefMin,
               )}
             </p>
             <ol className="regions">

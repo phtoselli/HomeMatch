@@ -9,13 +9,17 @@ export interface Params {
   cellSizeM: number;
 }
 
-export const DEFAULT_PARAMS: Params = { maxWalkToStopM: 600, cellSizeM: 500 };
+/** 250 m cells: the areas on the map follow the streets near the stops instead of half-kilometer blocks. */
+export const DEFAULT_PARAMS: Params = { maxWalkToStopM: 600, cellSizeM: 250 };
 
-/** Parameters saved by older versions (with a maximum commute and commute weight) still load. */
+/**
+ * Parameters saved by older versions (with a maximum commute and commute weight) still load. The cell size is not a
+ * user setting: older saves had 500 m, so it always comes from the defaults.
+ */
 export function normalizeParams(p: Partial<Params> & Record<string, unknown>): Params {
   return {
     maxWalkToStopM: Number(p.maxWalkToStopM) || DEFAULT_PARAMS.maxWalkToStopM,
-    cellSizeM: Number(p.cellSizeM) || DEFAULT_PARAMS.cellSizeM,
+    cellSizeM: DEFAULT_PARAMS.cellSizeM,
   };
 }
 

@@ -7,11 +7,25 @@ import { BROWSER_UA, HOUR, cached, httpFetch, readTextLimited } from "./http.js"
 import { assertPublicUrl } from "./net.js";
 import { detectAmenities, firstInt, normalizeType, parseBRL } from "./listings/normalize.js";
 import { geocodeInBox, searchAddress } from "./osm/nominatim.js";
+import {
+  addressInText,
+  appStates,
+  listingFromState,
+  mainHtml,
+  num,
+  validGeo,
+  walkSchema as walk,
+  type Json,
+} from "./listing-location.js";
 
 /**
  * Pasted links: takes a listing URL (any site) and tries to find where the property is.
- * 1) schema.org coordinates (JSON-LD `geo`) or meta tags — exact;
- * 2) otherwise, an address (JSON-LD `address` or breadcrumb) geocoded with Nominatim — approximate.
+ * 1) the property's coordinates: schema.org (JSON-LD `geo`) of the listing, the page's app state (Next.js, Nuxt…),
+ *    meta tags or a map embedded in the page body — exact;
+ * 2) otherwise, the property's address (JSON-LD, app state, an address written in the page body, breadcrumb)
+ *    geocoded with Nominatim — approximate.
+ * Never the agency's own address: schema.org organizations (RealEstateAgent…), the offices in the app state and the
+ * page header/footer are skipped (listing-location.ts).
  * Text patterns match Brazilian listing pages (Portuguese), which is the data being parsed.
  */
 export interface ExtractedInfo {
@@ -28,27 +42,6 @@ export interface ExtractedInfo {
   address?: string;
   /** Amenities found in the description; undefined when the page has no description. */
   amenities?: AmenityId[];
-}
-
-type Json = Record<string, unknown>;
-
-function* walk(v: unknown): Generator<Json> {
-  if (Array.isArray(v)) for (const x of v) yield* walk(x);
-  else if (v && typeof v === "object") {
-    yield v as Json;
-    for (const x of Object.values(v as Json)) if (x && typeof x === "object") yield* walk(x);
-  }
-}
-
-const num = (v: unknown): number | undefined => {
-  const n = typeof v === "string" ? Number(v.replace(",", ".")) : typeof v === "number" ? v : NaN;
-  return Number.isFinite(n) ? n : undefined;
-};
-
-function validGeo(lat?: number, lng?: number): LatLng | undefined {
-  if (lat == null || lng == null || (lat === 0 && lng === 0)) return undefined;
-  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return undefined;
-  return { lat, lng };
 }
 
 /** Pure parsing of a listing's HTML. */
@@ -100,6 +93,11 @@ export function extractListingInfo(html: string, pageUrl: string): ExtractedInfo
     }
   }
 
+  // The listing in the page's app state (agency sites on Next.js/Nuxt: often the only place with its position).
+  const state = listingFromState(appStates(document as unknown as Document, html));
+  info.geo ??= state.geo;
+  const body = mainHtml(document as unknown as Document);
+
   // Geolocation meta tags (some sites use them instead of JSON-LD).
   info.geo ??= validGeo(
     num(meta("place:location:latitude") ?? meta("og:latitude")),
@@ -111,15 +109,15 @@ export function extractListingInfo(html: string, pageUrl: string): ExtractedInfo
     if (m) info.geo = validGeo(Number(m[1]), Number(m[2]));
   }
   if (!info.geo) {
-    // Embedded Google map (…q=-23.5,-46.6 / center=… / @-23.5,-46.6)
-    const m = html.match(/maps[^"'\s]*?(?:[?&](?:q|center|ll)=|@)(-?\d{1,2}\.\d{4,}),\s?(-?\d{1,3}\.\d{4,})/);
+    // Map embedded in the page body (…q=-23.5,-46.6 / center=… / @-23.5,-46.6), not the footer's office map.
+    const m = body.match(/maps[^"'\s]*?(?:[?&](?:q|center|ll)=|@)(-?\d{1,2}\.\d{4,}),\s?(-?\d{1,3}\.\d{4,})/);
     if (m) info.geo = validGeo(Number(m[1]), Number(m[2]));
   }
 
   const ogTitle = meta("og:title") ?? document.querySelector("title")?.textContent?.trim();
   const desc = meta("og:description") ?? meta("description") ?? "";
   info.title ??= ogTitle?.replace(/\s*[-|]\s*(QuintoAndar|Viva ?Real|ZAP.*|OLX.*|Imovelweb.*)$/i, "");
-  const text = `${ogTitle ?? ""} ${desc}`;
+  const text = `${ogTitle ?? ""} ${info.title ?? ""} ${desc}`;
   info.rent ??= parseBRL(text.match(/R\$\s*[\d.,]+/)?.[0]) ?? num(pageUrl.match(/-RS(\d+)-/i)?.[1]);
   info.condo ??= parseBRL(text.match(/condom[íi]nio[^R]{0,15}R\$\s*[\d.,]+/i)?.[0]);
   info.iptu ??= parseBRL(text.match(/IPTU[^R]{0,15}R\$\s*[\d.,]+/i)?.[0]);
@@ -144,6 +142,7 @@ export function extractListingInfo(html: string, pageUrl: string): ExtractedInfo
     }
   }
 
+  info.address ??= state.address ?? addressInText(body);
   if (!info.address && breadcrumb.length > 2) {
     // e.g. Aluguel › SP › São Paulo › Zona Oeste › Pinheiros › Rua Cardeal Arcoverde
     const parts = breadcrumb

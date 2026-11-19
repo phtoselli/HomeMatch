@@ -14,7 +14,7 @@ export const queryClient = new QueryClient({
 
 export const queryKeys = {
   features: ["features"] as const,
-  sources: (cityId: string | undefined) => ["sources", cityId ?? null] as const,
+  sources: (cityId: string | undefined, extra: string[] = []) => ["sources", cityId ?? null, extra.join(",")] as const,
   operator: (cityId: string | undefined, work?: string | null) => ["operator", cityId ?? null, work ?? null] as const,
   timetable: (id: string | undefined) => ["timetable", id ?? null] as const,
 };
@@ -26,8 +26,14 @@ export const useFeatures = (): FeatureDef[] =>
   useQuery({ queryKey: queryKeys.features, queryFn: api.features, staleTime: Infinity }).data ?? NO_FEATURES;
 
 /** Portals + the city's agencies (the first time in a city takes ~30 s: the server visits each website). */
-export const useSources = (city: Pick<CityRef, "osmId"> | null) =>
-  useQuery({ queryKey: queryKeys.sources(city?.osmId), queryFn: () => api.sources(city), staleTime: 60 * 60_000 });
+export const useSources = (city: Pick<CityRef, "osmId"> | null, extra: string[] = []) =>
+  useQuery({
+    queryKey: queryKeys.sources(city?.osmId, extra),
+    queryFn: () => api.sources(city, extra),
+    staleTime: 60 * 60_000,
+    // Adding a site keeps the current list on screen while the server checks it.
+    placeholderData: (prev) => prev,
+  });
 
 /** Who publishes the city's bus lines, or the work city's (e.g. living in Paulínia → EMDEC). */
 export const useOperator = (city: CityRef | null, work?: LatLng | null) =>

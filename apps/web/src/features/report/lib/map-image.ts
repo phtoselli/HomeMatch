@@ -1,7 +1,7 @@
 import type { AnalysisResult, BBox, BusLine, City, LatLng, Region, RegionLevel } from "@homematch/contracts";
-import { atLeast } from "@homematch/domain";
+import { atLeast, levelAreas } from "@homematch/domain";
 import { t } from "@homematch/i18n";
-import { LEVEL_COLOR } from "@/shared/lib/format";
+import { AREA_STYLE, LEVEL_COLOR } from "@/shared/lib/format";
 
 export interface MapImageInput {
   city: City | null;
@@ -140,22 +140,35 @@ export async function renderMapImage(input: MapImageInput): Promise<MapImage | n
     ctx.restore();
   }
 
-  // Analysis grid, by level.
+  // Level areas, nested like on the screen (ok → good → excellent), one outline per level.
   const a = input.analysis;
   if (a) {
-    ctx.save();
-    ctx.globalAlpha = 0.42;
-    const half = a.cellSizeM / 2;
-    for (const c of a.cells) {
-      if (!atLeast(c.level, input.minLevel)) continue;
-      const dLat = half / 111_320;
-      const dLng = half / (111_320 * Math.cos((c.lat * Math.PI) / 180));
-      const [x1, y1] = px({ lat: c.lat + dLat, lng: c.lng - dLng });
-      const [x2, y2] = px({ lat: c.lat - dLat, lng: c.lng + dLng });
-      ctx.fillStyle = LEVEL_COLOR[c.level];
-      ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+    const shown = a.cells.filter((c) => atLeast(c.level, input.minLevel));
+    for (const area of levelAreas(shown, a.cellSizeM, input.minLevel)) {
+      const style = AREA_STYLE[area.level];
+      ctx.save();
+      ctx.beginPath();
+      for (const poly of area.polygons)
+        for (const ring of poly) {
+          ring.forEach((p, i) => {
+            const [x, y] = px(p);
+            if (i) ctx.lineTo(x, y);
+            else ctx.moveTo(x, y);
+          });
+          ctx.closePath();
+        }
+      ctx.fillStyle = LEVEL_COLOR[area.level];
+      // A bit stronger than on screen: printed colors come out lighter.
+      ctx.globalAlpha = Math.min(0.5, style.fill * 1.8);
+      ctx.fill("evenodd");
+      ctx.globalAlpha = 0.9;
+      ctx.strokeStyle = LEVEL_COLOR[area.level];
+      ctx.lineWidth = style.weight * 1.5;
+      ctx.lineJoin = "round";
+      if (style.dash) ctx.setLineDash(style.dash.split(" ").map((n) => Number(n) * 1.5));
+      ctx.stroke();
+      ctx.restore();
     }
-    ctx.restore();
   }
 
   // Bus lines: the analysis' and the ones the user added.

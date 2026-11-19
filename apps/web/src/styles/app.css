@@ -2443,6 +2443,49 @@ details.more > .grid3 + .field {
 .src-inline {
   color: var(--muted);
 }
+.src-tag.link {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.src-add {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.src-add .row {
+  display: flex;
+  gap: 8px;
+}
+.src-add input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: inherit;
+  background: var(--surface);
+}
+.src-add button {
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 10px;
+  font: inherit;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  cursor: pointer;
+}
+.src-add button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.src-add .warn {
+  color: var(--warn-ink);
+}
 
 /* ---------- Map settings ---------- */
 .map-settings {

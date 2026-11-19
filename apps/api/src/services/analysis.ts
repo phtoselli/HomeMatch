@@ -87,7 +87,7 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
   else if (!excellent && !good) warn(msg.mainNotMet);
   emit({
     type: "progress",
-    message: msg.levelsSummary(excellent, good, ok, grid.commuteBestMin, grid.commuteRefMin),
+    message: msg.levelsSummary(excellent, good, ok, grid.commuteBestMin, grid.commuteRefMin, grid.commuteDirectRefMin),
   });
 
   // Only send the places inside the analyzed area to the map (and the lines used).
@@ -125,6 +125,7 @@ export async function analyze(req: AnalyzeRequest, emit: Emit): Promise<Analysis
       levels: grid.levels,
       commuteBestMin: grid.commuteBestMin,
       commuteRefMin: grid.commuteRefMin,
+      commuteDirectRefMin: grid.commuteDirectRefMin,
       stopsUsable: stops.length,
     },
     warnings,

@@ -25,10 +25,13 @@ export function Routes({
         if (hidden.includes(lineKey(r))) continue;
         // Estimated leg (intercity without a mapped line): a thick dotted line, so it looks neither like a real route
         // nor like the base map's railways (dashed gray).
-        const weight = r.estimated ? 5 : r.mode === "bus" || r.mode === "trolleybus" ? 2.5 : 4.5;
+        // Feeder lines (reach work with a transfer) stay in the background; the lines that stop at work stand out.
+        const feeder = r.kind === "feeder";
+        const bus = r.mode === "bus" || r.mode === "trolleybus";
+        const weight = r.estimated ? 5 : feeder ? 1.8 : bus ? 3 : 4.5;
         const dots: L.PolylineOptions = r.estimated ? { dashArray: "0.1 10", lineCap: "round", opacity: 0.9 } : {};
         hoverable(
-          L.polyline(r.shape ?? r.path, { renderer, color: r.color, weight, opacity: 0.75, ...dots }),
+          L.polyline(r.shape ?? r.path, { renderer, color: r.color, weight, opacity: feeder ? 0.4 : 0.85, ...dots }),
           lineKey(r),
           weight,
           onHover,

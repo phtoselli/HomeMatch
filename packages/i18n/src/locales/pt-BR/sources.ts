@@ -6,8 +6,7 @@ export const sources = {
   httpOnly: "Use um link http(s)",
   overpassUnavailable: (details: string) => `Overpass indisponível. ${details}`,
   cityNotFound: (osmId: string) => `Cidade ${osmId} não encontrada`,
-  agenciesFound: (n: number, city: string) =>
-    `${n} imobiliárias com site em ${city} no OpenStreetMap. Vendo quais dá para ler…`,
+  agenciesFound: (n: number, city: string) => `${n} imobiliárias com site em ${city}. Vendo quais dá para ler…`,
   agenciesFailed: (reason: string) => `Não deu para buscar as imobiliárias da cidade: ${reason}`,
   agencyNotes: {
     robots: "O site pede para robôs não lerem (robots.txt). Respeitamos.",

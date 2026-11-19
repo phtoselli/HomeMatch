@@ -1,10 +1,14 @@
+import { parseStateListings } from "../core/appstate.js";
+import { parseListingCards } from "../core/cards.js";
+import { sameName } from "../core/engine.js";
 import { parseSchemaOrgListings } from "../core/schemaorg.js";
-import type { SiteExtension } from "../core/types.js";
+import type { RawListing, SiteExtension } from "../core/types.js";
 
 /**
  * Generic extension for an agency website: reads the rentals page that discovery found (discovery.ts) and follows
- * the "next page" link. Listings come from schema.org (JSON-LD), which many agency website platforms publish.
- * The whole city comes at once; the engine splits it by neighborhood.
+ * the "next page" link. Listings come from schema.org (JSON-LD), which many agency website platforms publish, or
+ * from the page's app state (sites on Next.js/Nuxt such as FlipCRM). When the sitemap lists one rentals page per
+ * neighborhood, the region's page is read instead of the whole city's first page.
  */
 export interface AgencySite {
   id: string; // "site:gallinari.com.br"
@@ -12,6 +16,21 @@ export interface AgencySite {
   site: string; // https://gallinari.com.br
   listingsUrl: string; // rentals page
   platform?: string;
+  /** Rentals page per neighborhood (from the sitemap). */
+  regionPages?: { name: string; url: string }[];
+}
+
+/**
+ * Pure parsing of an agency's rentals page: the app state or schema.org, whichever brings more (the state usually
+ * has the position and the rooms; some pages carry a bare schema.org list with only link and price), else the HTML
+ * cards.
+ */
+export function parseAgencyPage(html: string, pageUrl: string): RawListing[] {
+  const fromSchema = parseSchemaOrgListings(html, pageUrl);
+  const fromState = parseStateListings(html, pageUrl);
+  if (fromState.length && fromState.length >= fromSchema.length) return fromState;
+  if (fromSchema.length) return fromSchema;
+  return parseListingCards(html, pageUrl);
 }
 
 /** Link to the next page: rel="next", ".../page/3/", "?pagina=3", "?page=3". */
@@ -30,6 +49,8 @@ export function findNextLink(html: string, pageUrl: string, current: number): st
   }
 }
 
+const titleCase = (s: string) => s.replace(/(^|\s)\p{L}/gu, (c) => c.toUpperCase());
+
 export function agencyExtension(a: AgencySite): SiteExtension {
   return {
     id: a.id,
@@ -39,8 +60,17 @@ export function agencyExtension(a: AgencySite): SiteExtension {
     perPage: 1, // unknown page size: stop when nothing new comes or there is no "next"
     maxPages: 8,
     minIntervalMs: 2000,
-    url: ({ page }) => (page === 1 ? a.listingsUrl : null),
+    url: ({ page, region }) => {
+      if (page !== 1) return null;
+      // The neighborhood's own page when the site has one ("Taquaral" ↔ "parque-taquaral").
+      return a.regionPages?.find((p) => sameName(p.name, region.name))?.url ?? a.listingsUrl;
+    },
     next: (html, url, ctx) => findNextLink(html, url, ctx.page),
-    parse: parseSchemaOrgListings,
+    parse: (html, url) => {
+      const items = parseAgencyPage(html, url);
+      // On a neighborhood's own page, a listing that does not say its neighborhood is in that one.
+      const region = a.regionPages?.find((p) => url.startsWith(p.url));
+      return region ? items.map((r) => ({ ...r, neighbourhood: r.neighbourhood ?? titleCase(region.name) })) : items;
+    },
   };
 }

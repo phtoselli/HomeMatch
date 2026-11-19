@@ -13,7 +13,7 @@ const FALLBACK_SOURCES: SourceId[] = ["quintoandar", "chavesnamao", "zapimoveis"
 export function useSearch() {
   const store = useSearchStore();
   const city = usePlace((s) => s.city);
-  const sourcesQuery = useSources(city);
+  const sourcesQuery = useSources(city, store.extraAgencies);
   const available = sourcesQuery.data ?? null;
   const readable = available ? [...available.portals, ...available.agencies].filter((x) => x.status === "ok") : null;
   const sources = (readable?.map((x) => x.id) ?? FALLBACK_SOURCES).filter((id) => !store.disabledSources.includes(id));

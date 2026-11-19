@@ -1,7 +1,13 @@
 import type { Cell, LatLng } from "@homematch/contracts";
 
+/**
+ * Listings give an approximate position (portals blur the address by a few hundred meters), so a listing matches a
+ * cell up to this distance even with small cells.
+ */
+export const LISTING_SLACK_M = 375;
+
 /** Simple index to find the analyzed cell closest to a point. */
-export function makeCellLookup(cells: Cell[], cellSizeM: number, maxM = cellSizeM * 0.75) {
+export function makeCellLookup(cells: Cell[], cellSizeM: number, maxM = Math.max(cellSizeM * 0.75, LISTING_SLACK_M)) {
   const step = 0.01;
   const buckets = new Map<string, Cell[]>();
   const key = (lat: number, lng: number) => `${Math.floor(lat / step)}:${Math.floor(lng / step)}`;

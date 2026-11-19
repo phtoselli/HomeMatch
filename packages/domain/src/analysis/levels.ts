@@ -65,12 +65,27 @@ export const levelLabel = (l: RegionLevel) => t.regions.levels[l];
 
 /**
  * Transit without a time limit: "met" means reaching work within `refMin`, derived from the city's own best
- * commute (best + 50%, never below 40 min). So when living in a neighboring city the best-served regions still
- * count, and within the same city only well-served ones do.
+ * transit commute (best + 50%, never below 45 min). So when living in a neighboring city the best-served regions
+ * still count, and within the same city only well-served ones do.
+ *
+ * A direct line (one bus all the way, no transfer) is worth more than its minutes say: no missed connection, a seat
+ * for the whole ride. Along it, transit counts as met up to `directRefMin` (50% more). Without this, the
+ * neighborhoods along the line that stops at work, a bit farther out, fell to "ok" and out of the listing search.
  */
-export const COMMUTE_REF = { minMin: 40, factor: 1.5 };
+export const COMMUTE_REF = { minMin: 45, factor: 1.5, directFactor: 1.5 };
 export const commuteRef = (bestMin: number) =>
   Math.round(Math.max(COMMUTE_REF.minMin, (Number.isFinite(bestMin) ? bestMin : 0) * COMMUTE_REF.factor));
+export const directRef = (refMin: number) => Math.round(refMin * COMMUTE_REF.directFactor);
+
+/**
+ * How well the commute meets the transit criterion (0 = not met, 0.5..1 = met, 1 at the city's best). The limit is
+ * `refMin`, or `directRefMin` on a direct line.
+ */
+export function transitFit(c: { minutes: number; direct?: boolean }, bestMin: number, refMin: number): number {
+  const limit = c.direct ? directRef(refMin) : refMin;
+  if (c.minutes > limit) return 0;
+  return 0.5 + 0.5 * Math.max(0, Math.min(1, (limit - c.minutes) / Math.max(1, limit - bestMin)));
+}
 
 /**
  * Without a bus nearby, the computed time is the walk to work (sometimes hours, from a neighboring city). Beyond

@@ -9,6 +9,8 @@ import {
   commuteRef,
   noTransitNear,
   criteriaScore,
+  directRef,
+  transitFit,
   levelOf,
   levelRank,
   type CriterionResult,
@@ -47,6 +49,8 @@ export interface GridOutput {
   levels: Record<RegionLevel, number>;
   commuteBestMin: number;
   commuteRefMin: number;
+  /** Limit on a direct line (no transfer), above `commuteRefMin`. */
+  commuteDirectRefMin: number;
   /** Terminals (`Hub.id`) used by some kept cell. */
   hubsUsed: string[];
 }
@@ -106,7 +110,9 @@ export function scoreGrid(input: GridInput): GridOutput {
   // A long walk (no bus nearby) is not transit: it counts neither for the best time nor as met.
   const usable = (c: Commute) => !noTransitNear({ travel: c.travel, commuteMin: c.minutes });
   const best = commutes.reduce((m, c) => (usable(c) ? Math.min(m, c.minutes) : m), Infinity);
-  const ref = commuteRef(best);
+  // The reference comes from the best ride, not from the few blocks next to work that are reached on foot.
+  const bestRide = commutes.reduce((m, c) => (c.travel !== "walk" ? Math.min(m, c.minutes) : m), Infinity);
+  const ref = commuteRef(Number.isFinite(bestRide) ? bestRide : best);
 
   // 2nd pass: criteria met, level and score.
   const cells: Cell[] = [];
@@ -118,10 +124,9 @@ export function scoreGrid(input: GridInput): GridOutput {
     const featureDist: Record<string, number> = {};
     for (const cr of criteria) {
       if (cr.id === TRANSIT_CRITERION) {
-        const minutes = commute.minutes;
-        const inTime = minutes <= ref && usable(commute);
         const nearLine = !!prefIdx?.nearest(c, input.maxWalkToStopM);
-        let fit = inTime ? 0.5 + 0.5 * Math.max(0, Math.min(1, (ref - minutes) / Math.max(1, ref - best))) : 0;
+        let fit = usable(commute) ? transitFit(commute, best, ref) : 0;
+        const inTime = fit > 0;
         if (nearLine) fit = Math.max(fit, 0.85);
         results.push({ id: cr.id, weight: cr.weight, hit: inTime || nearLine, fit });
         continue;
@@ -141,8 +146,9 @@ export function scoreGrid(input: GridInput): GridOutput {
 
     cells.push({
       id: `${c.lat.toFixed(5)},${c.lng.toFixed(5)}`,
-      lat: c.lat,
-      lng: c.lng,
+      // ~1 m: enough for the map and keeps the answer small (there are thousands of cells).
+      lat: round5(c.lat),
+      lng: round5(c.lng),
       commuteMin: Math.round(commute.minutes),
       travel: commute.travel,
       via: commute.via,
@@ -160,9 +166,12 @@ export function scoreGrid(input: GridInput): GridOutput {
     levels,
     commuteBestMin: Number.isFinite(best) ? Math.round(best) : 0,
     commuteRefMin: ref,
+    commuteDirectRefMin: directRef(ref),
     hubsUsed: [...hubsUsed],
   };
 }
+
+const round5 = (x: number) => Math.round(x * 1e5) / 1e5;
 
 /** How far a neighborhood names the cells around it and, with none close, the farthest one still used. */
 export const PLACE_REACH = { nearM: 2500, farM: 6000 };

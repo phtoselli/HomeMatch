@@ -12,9 +12,10 @@ export const analysis = {
   scoring: "Cruzando trajeto e características em cada pedaço da cidade…",
   noRegions: "Nenhuma região atinge o que você pediu. Aumente as distâncias dos lugares ou mude as prioridades.",
   mainNotMet: "Nenhuma região atinge a sua prioridade principal; mostrando as que atingem as outras (ok).",
-  levelsSummary: (excellent: number, good: number, ok: number, bestMin: number, refMin: number) =>
+  levelsSummary: (excellent: number, good: number, ok: number, bestMin: number, refMin: number, directMin: number) =>
     `Áreas por nível: ${excellent} excelentes, ${good} boas e ${ok} ok. ` +
-    `Tempo até o trabalho: o melhor é ${bestMin} min; até ${refMin} min conta como bem servido.`,
+    `Tempo até o trabalho: o melhor é ${bestMin} min; até ${refMin} min conta como bem servido ` +
+    `(até ${directMin} min num ônibus direto, sem baldeação).`,
 };
 
 /** How work is reached: lines near work, intercity lines and estimates. */

@@ -202,9 +202,10 @@ export const results = {
   first120: "Mostrando os 120 primeiros. Ordene por preço ou trajeto para ver outros.",
   regionsFound: "Regiões encontradas",
   regionsSummary: (total: number, selected: number) => `${total} no total · ${selected} na busca de imóveis`,
-  regionsHint: (excellent: number, good: number, ok: number, best: number, ref: number) =>
+  regionsHint: (excellent: number, good: number, ok: number, best: number, ref: number, direct?: number) =>
     `Áreas: ${excellent} excelentes, ${good} boas e ${ok} ok. O melhor tempo até o trabalho é ${best} min; até ` +
-    `${ref} min o transporte conta como atingido. Marque as regiões e busque de novo.`,
+    `${ref} min${direct ? ` (${direct} min num ônibus direto)` : ""} o transporte conta como atingido. ` +
+    `Marque as regiões e busque de novo.`,
   includeRegion: (name: string) => `Incluir ${name} na busca`,
   regionScore: "Nota da região (prioridades atingidas)",
   searchIn: (n: number) => `Buscar imóveis em ${count(n, "região", "regiões")}`,

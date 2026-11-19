@@ -92,6 +92,8 @@ interface SearchState {
   filters: Filters;
   /** Unchecked sources: new sources showing up in the city start checked. */
   disabledSources: SourceId[];
+  /** Agency websites the user added (the server checks and reads them like the others). */
+  extraAgencies: string[];
   maxPerRegion: number;
   // ---- what the search found (gone after a reload) ----
   analysis: AnalysisResult | null;
@@ -115,6 +117,8 @@ interface SearchState {
   setMinLevel: (l: RegionLevel) => void;
   setFilters: (f: Filters) => void;
   setSourceEnabled: (id: SourceId, on: boolean) => void;
+  addAgency: (site: string) => void;
+  removeAgency: (site: string) => void;
   setMaxPerRegion: (n: number) => void;
   setSelectedRegions: (s: Set<string>) => void;
   reset: () => void;
@@ -163,6 +167,7 @@ export const useSearchStore = create<SearchState>()((set, get) => {
     minLevel: readSaved<RegionLevel>("minLevel", "ok"),
     filters: normalizeFilters(readSaved<Partial<Filters>>("filters", DEFAULT_FILTERS)),
     disabledSources: readSaved<SourceId[]>("disabledSources", []),
+    extraAgencies: readSaved<string[]>("extraAgencies", []),
     maxPerRegion: readSaved("maxPerRegion", 100),
     ...EMPTY_RESULTS,
     selectedRegions: new Set(),
@@ -173,6 +178,8 @@ export const useSearchStore = create<SearchState>()((set, get) => {
     setPriorities: (priorities) => set({ priorities }),
     setMinLevel: (minLevel) => set({ minLevel }),
     setFilters: (filters) => set({ filters: normalizeFilters(filters) }),
+    addAgency: (site) => set(({ extraAgencies: x }) => ({ extraAgencies: [...new Set([...x, site])].slice(-10) })),
+    removeAgency: (site) => set(({ extraAgencies: x }) => ({ extraAgencies: x.filter((s) => s !== site) })),
     setSourceEnabled: (id, on) =>
       set(({ disabledSources: d }) => ({ disabledSources: on ? d.filter((x) => x !== id) : [...new Set([...d, id])] })),
     setMaxPerRegion: (maxPerRegion) => set({ maxPerRegion }),
@@ -279,5 +286,6 @@ persistFields(useSearchStore, {
   minLevel: "minLevel",
   filters: "filters",
   disabledSources: "disabledSources",
+  extraAgencies: "extraAgencies",
   maxPerRegion: "maxPerRegion",
 });

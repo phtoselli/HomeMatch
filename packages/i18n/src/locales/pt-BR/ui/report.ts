@@ -50,8 +50,9 @@ export const report = {
   mustHave: "Itens indispensáveis",
   noMustHave: "nenhum item obrigatório",
   commute: "Tempo até o trabalho",
-  commuteValue: (best: number, ref: number) =>
-    `o ideal é até ~${ref} min de porta a porta (o melhor trajeto da cidade leva ~${best} min)`,
+  commuteValue: (best: number, ref: number, direct?: number) =>
+    `o ideal é até ~${ref} min de porta a porta${direct ? `, ou ~${direct} min num ônibus direto` : ""} ` +
+    `(o melhor trajeto da cidade leva ~${best} min)`,
 
   // ---- Priorities table
   priority: "Prioridade",

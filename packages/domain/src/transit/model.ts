@@ -72,6 +72,8 @@ export interface BoardingStop extends LatLng {
   valueMin: number;
   routeId: string;
   label: string;
+  /** Needs a change of line on the way (one transfer). */
+  transfer?: boolean;
 }
 
 /** Transfer: how far to walk between the stop you get off and the second line's stop, plus extra slack. */
@@ -117,7 +119,7 @@ function propagate(routes: ParsedRoute[], exit: Exit, best: Map<string, Boarding
         const key = `${s.lat.toFixed(5)},${s.lng.toFixed(5)}`;
         const cur = best.get(key);
         const label = via[i] ? t.transit.withTransfer(routeLabel(r), via[i]!) : routeLabel(r);
-        if (!cur || v < cur.valueMin) best.set(key, { ...s, valueMin: v, routeId: r.id, label });
+        if (!cur || v < cur.valueMin) best.set(key, { ...s, valueMin: v, routeId: r.id, label, transfer: !!via[i] });
       }
     }
   }
@@ -167,6 +169,8 @@ export function boardingStops(
 export interface Commute {
   minutes: number;
   travel: TravelKind;
+  /** One bus (or train) all the way, no change of line. Walking and estimates are not direct. */
+  direct?: boolean;
   /** Display label: "on foot" or the line(s). */
   via: string;
   routeId?: string;
@@ -184,7 +188,8 @@ export function commuteFrom(
   let best: Commute = { minutes: walk(distance(from, work)), travel: "walk", via: t.transit.onFoot };
   for (const { item, dist } of stops.within(from, maxWalkToStopM)) {
     const minutes = walk(dist) + item.valueMin;
-    if (minutes < best.minutes) best = { minutes, travel: "transit", via: item.label, routeId: item.routeId };
+    if (minutes < best.minutes)
+      best = { minutes, travel: "transit", via: item.label, routeId: item.routeId, direct: !item.transfer };
   }
   return best;
 }
